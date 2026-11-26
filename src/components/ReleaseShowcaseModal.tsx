@@ -1,23 +1,28 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Activity, ArrowRight, Cpu, Download, ShieldCheck, Sparkles, X } from 'lucide-react';
+import { ArrowRight, Download, RefreshCw, Sparkles, X } from 'lucide-react';
 import type { UpdateCheckResult } from '@/types/telemetry';
 
 interface ReleaseShowcaseModalProps {
   version: string;
   updateInfo: UpdateCheckResult | null;
+  checkingUpdates?: boolean;
+  onCheckUpdates?: () => void;
   onContinue: () => void;
 }
 
 export const ReleaseShowcaseModal: React.FC<ReleaseShowcaseModalProps> = ({
   version,
   updateInfo,
+  checkingUpdates = false,
+  onCheckUpdates,
   onContinue,
 }) => {
-  const [videoFailed, setVideoFailed] = useState(false);
+  const [fallbackLocal, setFallbackLocal] = useState(false);
   const isUpdate = Boolean(updateInfo?.update_available);
   const videoSrc =
-    (isUpdate && updateInfo?.whats_new_video_url) || '/videos/whats-new.mp4';
+    (!fallbackLocal && isUpdate && updateInfo?.whats_new_video_url) || '/videos/whats-new.mp4';
+  const downloadHref = updateInfo?.installer_url ?? updateInfo?.release_page_url;
 
   return (
     <div
@@ -37,7 +42,7 @@ export const ReleaseShowcaseModal: React.FC<ReleaseShowcaseModalProps> = ({
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
         style={{
           width: 780,
           maxWidth: '94vw',
@@ -54,7 +59,7 @@ export const ReleaseShowcaseModal: React.FC<ReleaseShowcaseModalProps> = ({
       >
         <div
           style={{
-            padding: '16px 22px',
+            padding: '15px 22px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -72,171 +77,73 @@ export const ReleaseShowcaseModal: React.FC<ReleaseShowcaseModalProps> = ({
               }}
             >
               {isUpdate
-                ? `What's New in SilentWatch v${updateInfo?.latest_version}`
+                ? `New Release Available — SilentWatch v${updateInfo?.latest_version}`
                 : `What's New in SilentWatch v${version}`}
             </span>
           </div>
-          <button
-            type="button"
-            aria-label="Close What's New"
-            onClick={onContinue}
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: 999,
-              border: '1px solid rgba(255,255,255,0.12)',
-              background: 'rgba(255,255,255,0.06)',
-              color: '#A8A2A8',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <X size={14} />
-          </button>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            {onCheckUpdates && (
+              <button
+                type="button"
+                className="sw-cta-secondary"
+                style={{ height: 28, fontSize: 11.5, padding: '0 11px' }}
+                onClick={onCheckUpdates}
+                disabled={checkingUpdates}
+              >
+                <RefreshCw size={12} className={checkingUpdates ? 'sw-orbit-spin' : ''} />
+                <span>{checkingUpdates ? 'Checking...' : 'Check Releases'}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              aria-label="Close What's New"
+              onClick={onContinue}
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 999,
+                border: '1px solid rgba(255,255,255,0.12)',
+                background: 'rgba(255,255,255,0.06)',
+                color: '#A8A2A8',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
 
         <div
           style={{
             position: 'relative',
-            background: '#050408',
+            background: '#18181B',
             aspectRatio: '16 / 9',
             width: '100%',
             overflow: 'hidden',
           }}
         >
-          {!videoFailed ? (
-            <video
-              src={videoSrc}
-              autoPlay
-              loop
-              muted
-              playsInline
-              controls
-              onError={() => setVideoFailed(true)}
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                display: 'block',
-              }}
-            />
-          ) : (
-            <div
-              style={{
-                width: '100%',
-                height: '100%',
-                background:
-                  'radial-gradient(ellipse 65% 60% at 24% 20%, rgba(217, 70, 239, 0.34) 0%, rgba(168, 85, 247, 0.14) 38%, #07060A 78%)',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                padding: '32px 36px',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span
-                  className="mono"
-                  style={{
-                    fontSize: 11,
-                    color: '#F0ABFC',
-                    padding: '4px 10px',
-                    borderRadius: 999,
-                    background: 'rgba(217, 70, 239, 0.16)',
-                    border: '1px solid rgba(232, 121, 249, 0.4)',
-                  }}
-                >
-                  RELEASE v{isUpdate ? updateInfo?.latest_version : version}
-                </span>
-                <span style={{ fontSize: 12, color: '#A8A2A8' }}>
-                  Local-First Windows Telemetry
-                </span>
-              </div>
-
-              <div>
-                <h2
-                  style={{
-                    margin: '0 0 8px',
-                    fontSize: 30,
-                    fontWeight: 600,
-                    letterSpacing: '-0.03em',
-                    color: '#FFFFFF',
-                  }}
-                >
-                  SilentWatch Liquid Glass
-                </h2>
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: 14,
-                    color: '#C7C1CA',
-                    maxWidth: 520,
-                    lineHeight: 1.5,
-                  }}
-                >
-                  Real-time CPU &amp; RAM process counters, background Windows System Tray
-                  monitoring, Behavior Explorer, and automatic GitHub release updates.
-                </p>
-              </div>
-
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
-                  gap: 12,
-                }}
-              >
-                {[
-                  {
-                    icon: Cpu,
-                    title: 'Live CPU & RAM',
-                    desc: 'Per-process telemetry refreshed every 3s.',
-                  },
-                  {
-                    icon: Activity,
-                    title: 'Background Tray',
-                    desc: 'Pause, resume, or stop collectors from tray.',
-                  },
-                  {
-                    icon: ShieldCheck,
-                    title: 'Auto-Updates',
-                    desc: 'Tracks GitHub Releases with release reels.',
-                  },
-                ].map((item, idx) => {
-                  const Icon = item.icon;
-                  return (
-                    <motion.div
-                      key={item.title}
-                      initial={{ opacity: 0, y: 12 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.12 + idx * 0.1, duration: 0.36 }}
-                      style={{
-                        padding: 14,
-                        borderRadius: 16,
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: '1px solid rgba(255, 255, 255, 0.12)',
-                      }}
-                    >
-                      <Icon size={16} color="#E879F9" />
-                      <div
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: '#F8F7FA',
-                          marginTop: 8,
-                        }}
-                      >
-                        {item.title}
-                      </div>
-                      <div style={{ fontSize: 11.5, color: '#A8A2A8', marginTop: 3 }}>
-                        {item.desc}
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          <video
+            key={videoSrc}
+            src={videoSrc}
+            autoPlay
+            loop
+            muted
+            playsInline
+            controls
+            onError={() => {
+              if (!fallbackLocal && isUpdate && updateInfo?.whats_new_video_url) {
+                setFallbackLocal(true);
+              }
+            }}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              display: 'block',
+            }}
+          />
         </div>
 
         <div
@@ -245,14 +152,19 @@ export const ReleaseShowcaseModal: React.FC<ReleaseShowcaseModalProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            gap: 14,
+            gap: 16,
           }}
         >
-          <div style={{ fontSize: 12.5, color: '#A8A2A8', lineHeight: 1.45 }}>
-            {isUpdate
-              ? updateInfo?.release_notes.slice(0, 140)
-              : 'Live CPU/RAM monitoring, Apple Liquid Glass workspace, Behavior Explorer, and background System Tray service are ready.'}
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#E879F9', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>
+              {isUpdate ? `What's New in v${updateInfo?.latest_version}` : 'Release Highlights'}
+            </div>
+            <div style={{ fontSize: 12.5, color: '#C5BDCC', lineHeight: 1.45, maxHeight: 58, overflowY: 'auto' }}>
+              {updateInfo?.release_notes ||
+                'Live CPU/RAM counters, true local-time timelines, Apple Liquid Glass workspace, background System Tray service, and GitHub auto-updates.'}
+            </div>
           </div>
+
           <div
             style={{
               display: 'inline-flex',
@@ -261,18 +173,23 @@ export const ReleaseShowcaseModal: React.FC<ReleaseShowcaseModalProps> = ({
               flexShrink: 0,
             }}
           >
-            {isUpdate && (updateInfo?.installer_url || updateInfo?.release_page_url) && (
+            {isUpdate && downloadHref && (
               <a
-                href={updateInfo.installer_url ?? updateInfo.release_page_url}
+                href={downloadHref}
                 target="_blank"
                 rel="noreferrer"
-                className="sw-cta-secondary"
+                className="sw-cta-primary"
                 style={{ textDecoration: 'none' }}
               >
-                <Download size={14} /> Download v{updateInfo.latest_version}
+                <Download size={14} />
+                <span>Download Release</span>
               </a>
             )}
-            <button type="button" className="sw-cta-primary" onClick={onContinue}>
+            <button
+              type="button"
+              className={isUpdate ? 'sw-cta-secondary' : 'sw-cta-primary'}
+              onClick={onContinue}
+            >
               <span>Open Dashboard</span>
               <ArrowRight size={14} />
             </button>

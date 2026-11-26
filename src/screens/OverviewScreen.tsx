@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowUpRight, Cpu, MemoryStick, Play, ShieldAlert } from 'lucide-react';
+import { ArrowUpRight, Cpu, Flame, Globe, MemoryStick, Play, ShieldAlert } from 'lucide-react';
 import {
   EmptyStateEmblem,
   ProcessAppIcon,
@@ -286,34 +286,42 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
             <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#F8F7FA' }}>
               High Activity Applications
             </h2>
-            <div style={{ display: 'inline-flex', gap: 4 }}>
+            <div role="group" aria-label="Filter applications" style={{ display: 'inline-flex', gap: 6 }}>
               {(
                 [
-                  ['active', 'Most Active'],
-                  ['network', 'Network'],
-                  ['flagged', 'Unsigned'],
+                  { key: 'active', label: 'Most Active', icon: Flame },
+                  { key: 'network', label: 'Network Activity', icon: Globe },
+                  { key: 'flagged', label: 'Unsigned / Flagged', icon: ShieldAlert },
                 ] as const
-              ).map(([key, lbl]) => {
+              ).map(({ key, label, icon: Icon }) => {
                 const active = appFilter === key;
                 return (
                   <button
                     key={key}
                     type="button"
                     onClick={() => setAppFilter(key)}
+                    title={label}
+                    aria-label={label}
+                    aria-pressed={active}
                     style={{
-                      height: 26,
-                      padding: '0 10px',
+                      width: 30,
+                      height: 30,
                       borderRadius: 999,
                       border: active
-                        ? '1px solid rgba(232, 121, 249, 0.5)'
-                        : '1px solid rgba(255, 255, 255, 0.09)',
-                      background: active ? 'rgba(217, 70, 239, 0.2)' : 'transparent',
+                        ? '1px solid rgba(232, 121, 249, 0.65)'
+                        : '1px solid rgba(255, 255, 255, 0.1)',
+                      background: active
+                        ? 'radial-gradient(circle at 30% 30%, rgba(232, 121, 249, 0.34), rgba(168, 85, 247, 0.16))'
+                        : 'rgba(255, 255, 255, 0.03)',
                       color: active ? '#FFFFFF' : '#9E98A4',
-                      fontSize: 11.5,
-                      fontWeight: active ? 500 : 400,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: active ? '0 0 12px rgba(217, 70, 239, 0.25)' : 'none',
+                      transition: 'all 140ms ease',
                     }}
                   >
-                    {lbl}
+                    <Icon size={14} strokeWidth={active ? 2 : 1.65} />
                   </button>
                 );
               })}

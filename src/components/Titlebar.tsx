@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Minus, PanelLeft, Search, Sparkles, Square, X } from 'lucide-react';
+import { Download, Minus, PanelLeft, RefreshCw, Search, Square, X } from 'lucide-react';
 import { SilentWatchMark } from '@/assets/VisualAssets';
 import { SPRINGS } from '@/animations/motionTokens';
 import type { DataSourceMode, MotionTier, PrivilegeMode, UpdateCheckResult } from '@/types/telemetry';
@@ -13,10 +13,11 @@ interface TitlebarProps {
   motionTier: MotionTier;
   sidebarCollapsed: boolean;
   updateInfo: UpdateCheckResult | null;
+  checkingUpdates: boolean;
   onModeChange: (mode: DataSourceMode) => void;
   onToggleSidebar: () => void;
   onOpenPalette: () => void;
-  onOpenUpdateModal: () => void;
+  onCheckAndOpenReleases: () => void;
   onHideToTray: () => void;
 }
 
@@ -27,14 +28,16 @@ export const Titlebar: React.FC<TitlebarProps> = ({
   motionTier,
   sidebarCollapsed,
   updateInfo,
+  checkingUpdates,
   onModeChange,
   onToggleSidebar,
   onOpenPalette,
-  onOpenUpdateModal,
+  onCheckAndOpenReleases,
   onHideToTray,
 }) => {
   const isDemo = mode === 'demo';
   const dotColor = isDemo ? '#60A5FA' : monitoringActive ? '#5ED18A' : '#847C84';
+  const hasUpdate = Boolean(updateInfo?.update_available);
 
   const handleWindowAction = async (action: 'minimize' | 'maximize' | 'close') => {
     if (action === 'minimize') {
@@ -122,28 +125,58 @@ export const Titlebar: React.FC<TitlebarProps> = ({
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-        {updateInfo?.update_available && (
-          <button
-            type="button"
-            onClick={onOpenUpdateModal}
-            style={{
-              height: 28,
-              padding: '0 11px',
-              borderRadius: 999,
-              border: '1px solid rgba(232, 121, 249, 0.5)',
-              background: 'linear-gradient(135deg, rgba(217, 70, 239, 0.28), rgba(147, 51, 234, 0.24))',
-              color: '#FAF5FF',
-              fontSize: 11.5,
-              fontWeight: 500,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-            }}
-          >
-            <Sparkles size={12} color="#F0ABFC" />
-            <span>Update v{updateInfo.latest_version}</span>
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onCheckAndOpenReleases}
+          aria-label={
+            hasUpdate
+              ? `Download Release v${updateInfo?.latest_version}`
+              : 'Check for new releases'
+          }
+          title={
+            hasUpdate
+              ? `New release v${updateInfo?.latest_version} available — click to view What's New & download`
+              : "Check GitHub Releases & What's New"
+          }
+          style={{
+            height: 30,
+            padding: hasUpdate ? '0 12px' : '0 10px',
+            borderRadius: 999,
+            border: hasUpdate
+              ? '1px solid rgba(232, 121, 249, 0.65)'
+              : '1px solid rgba(255, 255, 255, 0.1)',
+            background: hasUpdate
+              ? 'linear-gradient(135deg, rgba(217, 70, 239, 0.34), rgba(147, 51, 234, 0.28))'
+              : 'rgba(14, 12, 18, 0.8)',
+            color: hasUpdate ? '#FFFFFF' : '#C5BDCC',
+            fontSize: 11.5,
+            fontWeight: 500,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            boxShadow: hasUpdate ? '0 0 16px rgba(217, 70, 239, 0.32)' : 'none',
+          }}
+        >
+          {checkingUpdates ? (
+            <RefreshCw size={13} className="sw-orbit-spin" />
+          ) : (
+            <Download size={13} color={hasUpdate ? '#F5D0FE' : '#B4AEB8'} />
+          )}
+          {hasUpdate && (
+            <>
+              <span>Download v{updateInfo?.latest_version}</span>
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: '#4ADE80',
+                  boxShadow: '0 0 8px #4ADE80',
+                }}
+              />
+            </>
+          )}
+        </button>
 
         <div
           role="group"
@@ -209,7 +242,7 @@ export const Titlebar: React.FC<TitlebarProps> = ({
           onClick={onOpenPalette}
           aria-label="Open Command Palette (Ctrl+K)"
           style={{
-            width: 232,
+            width: 220,
             height: 30,
             padding: '0 10px 0 12px',
             borderRadius: 999,

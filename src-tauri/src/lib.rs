@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{Local, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use silentwatch_collectors::CollectorRuntime;
 use silentwatch_core::*;
@@ -29,6 +29,7 @@ pub struct UpdateCheckResult {
     pub release_notes: String,
     pub installer_url: Option<String>,
     pub whats_new_video_url: Option<String>,
+    pub startup_video_url: Option<String>,
     pub release_page_url: String,
     pub checked_ok: bool,
 }
@@ -165,14 +166,21 @@ fn check_for_updates() -> Result<UpdateCheckResult, String> {
 
             let mut installer_url = None;
             let mut video_url = None;
+            let mut startup_video_url = None;
             if let Some(assets) = json["assets"].as_array() {
                 for a in assets {
                     let name = a["name"].as_str().unwrap_or("").to_lowercase();
                     let dl = a["browser_download_url"].as_str().map(|s| s.to_string());
                     if name.ends_with(".exe") && installer_url.is_none() {
                         installer_url = dl;
-                    } else if name.ends_with(".mp4") && video_url.is_none() {
-                        video_url = dl;
+                    } else if name.ends_with(".mp4") {
+                        if (name.contains("startup") || name.contains("intro"))
+                            && startup_video_url.is_none()
+                        {
+                            startup_video_url = dl;
+                        } else if video_url.is_none() {
+                            video_url = dl;
+                        }
                     }
                 }
             }
@@ -185,6 +193,7 @@ fn check_for_updates() -> Result<UpdateCheckResult, String> {
                 release_notes: notes,
                 installer_url,
                 whats_new_video_url: video_url,
+                startup_video_url,
                 release_page_url: html_url,
                 checked_ok: true,
             })
@@ -196,6 +205,7 @@ fn check_for_updates() -> Result<UpdateCheckResult, String> {
             release_notes: "You are running the latest installed version (offline or no published GitHub release yet).".into(),
             installer_url: None,
             whats_new_video_url: None,
+            startup_video_url: None,
             release_page_url: repo_releases,
             checked_ok: false,
         }),
@@ -289,23 +299,80 @@ fn get_overview(
         .count() as u64;
 
     let now_ms = Utc::now().timestamp_millis();
-    let timeline: Vec<TimelineBucket> = (0..12)
+    let (bucket_count, step_ms, is_days): (usize, i64, bool) = match range.as_str() {
+        "15M" => (12, 75_000, false),
+        "1H" => (12, 300_000, false),
+        "6H" => (12, 1_800_000, false),
+        "24H" => (12, 7_200_000, false),
+        "7D" => (7, 86_400_000, true),
+        _ => (12, 300_000, false),
+    };
+    let window_start_ms = now_ms - (bucket_count as i64 * step_ms);
+    let recent_events = state
+        .storage
+        .query_events(&EventQuery {
+            limit: 2500,
+            ..Default::default()
+        })
+        .unwrap_or_default();
+
+    let mut proc_bins = vec![0u64; bucket_count];
+    let mut net_bins = vec![0u64; bucket_count];
+    let mut mod_bins = vec![0u64; bucket_count];
+    let mut rule_bins = vec![0u64; bucket_count];
+
+    for ev in &recent_events {
+        if ev.event_ts_ms < window_start_ms || ev.event_ts_ms > now_ms {
+            continue;
+        }
+        let idx = (((ev.event_ts_ms - window_start_ms) / step_ms) as usize).min(bucket_count - 1);
+        match ev.category {
+            EventCategory::Process => proc_bins[idx] += 1,
+            EventCategory::Network => net_bins[idx] += 1,
+            EventCategory::Module => mod_bins[idx] += 1,
+            EventCategory::Rule => rule_bins[idx] += 1,
+            EventCategory::System => proc_bins[idx] += 1,
+        }
+    }
+    if let Some(last) = bucket_count.checked_sub(1) {
+        if proc_bins[last] == 0 && !procs.is_empty() {
+            proc_bins[last] = (procs.len() as u64 / 8).max(1);
+        }
+        if net_bins[last] == 0 && !conns.is_empty() {
+            net_bins[last] = (conns.len() as u64 / 4).max(1);
+        }
+        if mod_bins[last] == 0 && !mods.is_empty() {
+            mod_bins[last] = (mods.len() as u64 / 12).max(1);
+        }
+        rule_bins[last] = rule_bins[last].max(matched_rules);
+    }
+
+    let timeline: Vec<TimelineBucket> = (0..bucket_count)
         .map(|i| {
-            let bucket_ts = now_ms - ((11 - i) * 300_000);
-            let label = chrono::DateTime::from_timestamp_millis(bucket_ts)
-                .map(|dt| dt.format("%H:%M").to_string())
+            let bucket_ts = now_ms - (((bucket_count - 1 - i) as i64) * step_ms);
+            let label = Local
+                .timestamp_millis_opt(bucket_ts)
+                .single()
+                .map(|dt| {
+                    if is_days {
+                        dt.format("%a %d").to_string()
+                    } else {
+                        dt.format("%H:%M").to_string()
+                    }
+                })
                 .unwrap_or_else(|| format!("T-{i}"));
-            let base = (procs.len() as u64 / 6).max(2);
-            let net = (conns.len() as u64 / 4).max(1);
-            let m = (mods.len() as u64 / 8).max(1);
+            let p = proc_bins[i];
+            let n = net_bins[i];
+            let m = mod_bins[i];
+            let r = rule_bins[i];
             TimelineBucket {
                 timestamp_ms: bucket_ts,
                 label,
-                total_events: base + net + m,
-                process_events: base,
-                network_events: net,
+                total_events: p + n + m + r,
+                process_events: p,
+                network_events: n,
                 module_events: m,
-                rule_events: if i == 11 { matched_rules } else { 0 },
+                rule_events: r,
             }
         })
         .collect();
@@ -729,7 +796,6 @@ pub fn run() {
     let mut settings = storage.load_settings().unwrap_or_default();
     let mut force_video = false;
 
-    // Apply preferences written by NSIS installer during installation
     let installer_prefs_path = data_dir.join("installer_prefs.json");
     if let Ok(raw) = std::fs::read_to_string(&installer_prefs_path) {
         if let Ok(prefs) = serde_json::from_str::<InstallerPrefs>(&raw) {
@@ -749,7 +815,6 @@ pub fn run() {
     }
 
     let collector = Arc::new(CollectorRuntime::new(settings.privilege_mode));
-    // Start real background monitoring immediately (independent of UI window visibility)
     collector.start();
     let initial_cycle = collector.collect_once();
     let _ = storage.upsert_processes(&initial_cycle.processes);

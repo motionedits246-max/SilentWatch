@@ -5,7 +5,9 @@
   "type": "module",
   "description": "SilentWatch — Windows-first, local-first application behavior monitoring and investigation tool",
   "scripts": {
+    "predev": "node scripts/unpack-videos.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/unpack-videos.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
