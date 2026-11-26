@@ -1,4 +1,5 @@
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use silentwatch_collectors::CollectorRuntime;
 use silentwatch_core::*;
 use silentwatch_ipc::*;
@@ -17,6 +18,26 @@ pub struct AppState {
     pub collector: Arc<CollectorRuntime>,
     pub settings: Mutex<AppSettings>,
     pub export_dir: PathBuf,
+    pub force_show_release_video: Mutex<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateCheckResult {
+    pub current_version: String,
+    pub latest_version: String,
+    pub update_available: bool,
+    pub release_notes: String,
+    pub installer_url: Option<String>,
+    pub whats_new_video_url: Option<String>,
+    pub release_page_url: String,
+    pub checked_ok: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct InstallerPrefs {
+    close_behavior: Option<CloseWindowBehavior>,
+    privilege_mode: Option<PrivilegeMode>,
+    show_release_video: Option<bool>,
 }
 
 impl AppState {
@@ -33,10 +54,152 @@ impl AppState {
 #[tauri::command]
 fn signal_ui_ready(app: AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("main") {
+        let _ = win.unminimize();
         let _ = win.show();
         let _ = win.set_focus();
     }
     Ok(())
+}
+
+#[tauri::command]
+fn window_minimize(app: AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("main") {
+        win.minimize().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn window_toggle_maximize(app: AppHandle) -> Result<bool, String> {
+    if let Some(win) = app.get_webview_window("main") {
+        let is_max = win.is_maximized().unwrap_or(false);
+        if is_max {
+            win.unmaximize().map_err(|e| e.to_string())?;
+            return Ok(false);
+        } else {
+            win.maximize().map_err(|e| e.to_string())?;
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+#[tauri::command]
+fn window_close_to_tray(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let behavior = state
+        .settings
+        .lock()
+        .map(|s| s.close_behavior)
+        .unwrap_or(CloseWindowBehavior::HideToTray);
+    if behavior == CloseWindowBehavior::HideToTray {
+        if let Some(win) = app.get_webview_window("main") {
+            let _ = win.hide();
+        }
+    } else {
+        state.collector.stop();
+        let _ = state.storage.shutdown_cleanly();
+        app.exit(0);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn should_show_release_video(state: State<'_, AppState>) -> Result<bool, String> {
+    let forced = state
+        .force_show_release_video
+        .lock()
+        .map(|g| *g)
+        .unwrap_or(false);
+    if forced {
+        return Ok(true);
+    }
+    let current = env!("CARGO_PKG_VERSION").to_string();
+    let last_seen = state
+        .settings
+        .lock()
+        .ok()
+        .and_then(|s| s.last_seen_version.clone());
+    Ok(last_seen.as_deref() != Some(current.as_str()))
+}
+
+#[tauri::command]
+fn mark_release_video_seen(state: State<'_, AppState>) -> Result<(), String> {
+    if let Ok(mut f) = state.force_show_release_video.lock() {
+        *f = false;
+    }
+    if let Ok(mut s) = state.settings.lock() {
+        s.last_seen_version = Some(env!("CARGO_PKG_VERSION").to_string());
+        let _ = state.storage.save_settings(&s);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn check_for_updates() -> Result<UpdateCheckResult, String> {
+    let current = env!("CARGO_PKG_VERSION").to_string();
+    let repo_releases = "https://github.com/motionedits246-max/SilentWatch/releases".to_string();
+
+    let resp =
+        ureq::get("https://api.github.com/repos/motionedits246-max/SilentWatch/releases/latest")
+            .set("User-Agent", "SilentWatch-Desktop-Updater/0.1.0")
+            .set("Accept", "application/vnd.github+json")
+            .timeout(Duration::from_secs(6))
+            .call();
+
+    match resp {
+        Ok(r) => {
+            let json: serde_json::Value = r.into_json().map_err(|e| e.to_string())?;
+            let tag = json["tag_name"]
+                .as_str()
+                .unwrap_or(&current)
+                .trim_start_matches('v')
+                .to_string();
+            let notes = json["body"]
+                .as_str()
+                .unwrap_or("Performance improvements and telemetry updates.")
+                .to_string();
+            let html_url = json["html_url"]
+                .as_str()
+                .unwrap_or(&repo_releases)
+                .to_string();
+
+            let mut installer_url = None;
+            let mut video_url = None;
+            if let Some(assets) = json["assets"].as_array() {
+                for a in assets {
+                    let name = a["name"].as_str().unwrap_or("").to_lowercase();
+                    let dl = a["browser_download_url"].as_str().map(|s| s.to_string());
+                    if name.ends_with(".exe") && installer_url.is_none() {
+                        installer_url = dl;
+                    } else if name.ends_with(".mp4") && video_url.is_none() {
+                        video_url = dl;
+                    }
+                }
+            }
+
+            let update_available = tag != current && !tag.is_empty();
+            Ok(UpdateCheckResult {
+                current_version: current,
+                latest_version: tag,
+                update_available,
+                release_notes: notes,
+                installer_url,
+                whats_new_video_url: video_url,
+                release_page_url: html_url,
+                checked_ok: true,
+            })
+        }
+        Err(_) => Ok(UpdateCheckResult {
+            current_version: current.clone(),
+            latest_version: current,
+            update_available: false,
+            release_notes: "You are running the latest installed version (offline or no published GitHub release yet).".into(),
+            installer_url: None,
+            whats_new_video_url: None,
+            release_page_url: repo_releases,
+            checked_ok: false,
+        }),
+    }
 }
 
 #[tauri::command]
@@ -60,7 +223,7 @@ fn save_settings(state: State<'_, AppState>, settings: AppSettings) -> Result<Ap
     }
     let _ = state
         .storage
-        .append_diagnostic_log("INFO", "Updated persistent application settings.");
+        .append_diagnostic_log("INFO", "Settings saved.");
     Ok(settings)
 }
 
@@ -74,10 +237,7 @@ fn start_monitoring(state: State<'_, AppState>) -> Result<bool, String> {
     let _ = state.storage.insert_events_batch(&cycle.events);
     let _ = state.storage.append_diagnostic_log(
         "INFO",
-        &format!(
-            "Monitoring active ({} processes observed in initial snapshot).",
-            cycle.processes.len()
-        ),
+        &format!("Monitoring active ({} processes).", cycle.processes.len()),
     );
     Ok(true)
 }
@@ -87,7 +247,7 @@ fn stop_monitoring(state: State<'_, AppState>) -> Result<bool, String> {
     state.collector.stop();
     let _ = state
         .storage
-        .append_diagnostic_log("INFO", "Monitoring explicitly stopped by user.");
+        .append_diagnostic_log("INFO", "Monitoring paused.");
     Ok(false)
 }
 
@@ -102,14 +262,10 @@ fn get_overview(
         return Ok(DemoFixtureEngine::overview(&range));
     }
 
-    let settings = state
-        .settings
-        .lock()
-        .map(|s| s.clone())
-        .unwrap_or_default();
+    let settings = state.settings.lock().map(|s| s.clone()).unwrap_or_default();
     let procs = state
         .storage
-        .query_processes(50, 0)
+        .query_processes(60, 0)
         .map_err(|e| e.to_string())?;
     let conns = state
         .storage
@@ -243,7 +399,10 @@ fn get_behavior_graph(
         id: "node-root".into(),
         kind: GraphNodeKind::Process,
         label: root.exe_name.clone(),
-        subtitle: format!("PID {} • {:?}", root.instance_id.pid, root.signature_status),
+        subtitle: format!(
+            "PID {} • {:.1}% CPU • {:.0} MB",
+            root.instance_id.pid, root.cpu_percent, root.memory_mb
+        ),
         timestamp_ms: root.first_seen_ms,
         signature_status: Some(root.signature_status),
         classification: EpistemicClassification::Confirmed,
@@ -253,7 +412,8 @@ fn get_behavior_graph(
             "identity": root_key,
             "path": root.exe_path,
             "args": root.command_line_redacted,
-            "publisher": root.publisher,
+            "cpu_percent": root.cpu_percent,
+            "memory_mb": root.memory_mb,
         }),
         modules: vec![],
     }];
@@ -276,7 +436,7 @@ fn get_behavior_graph(
             id: cid.clone(),
             kind: GraphNodeKind::Process,
             label: child.exe_name.clone(),
-            subtitle: format!("PID {} • Spawned", child.instance_id.pid),
+            subtitle: format!("PID {} • {:.0} MB", child.instance_id.pid, child.memory_mb),
             timestamp_ms: child.first_seen_ms,
             signature_status: Some(child.signature_status),
             classification: EpistemicClassification::Confirmed,
@@ -286,7 +446,7 @@ fn get_behavior_graph(
                 "identity": child.instance_id.stable_key(),
                 "parent": root_key,
                 "path": child.exe_path,
-                "args": child.command_line_redacted,
+                "memory_mb": child.memory_mb,
             }),
             modules: vec![],
         });
@@ -294,7 +454,7 @@ fn get_behavior_graph(
             id: format!("edge-child-{idx}"),
             source: "node-root".into(),
             target: cid,
-            label: "Spawned (Confirmed)".into(),
+            label: "Spawned".into(),
             timestamp_ms: child.first_seen_ms,
             classification: EpistemicClassification::Confirmed,
             category: EventCategory::Process,
@@ -331,7 +491,6 @@ fn get_behavior_graph(
                 "ip": c.remote_addr,
                 "port": c.remote_port,
                 "protocol": c.protocol,
-                "provenance": c.provenance.source_api,
             }),
             modules: vec![],
         });
@@ -359,8 +518,8 @@ fn get_behavior_graph(
         nodes.push(BehaviorNode {
             id: "node-dlls".into(),
             kind: GraphNodeKind::DllCluster,
-            label: format!("DLL Cluster ({} Loaded)", mods.len()),
-            subtitle: format!("{} Signed/Other • {} Unsigned", mods.len() - unsigned, unsigned),
+            label: format!("DLL Cluster ({})", mods.len()),
+            subtitle: format!("{} Signed • {} Unsigned", mods.len() - unsigned, unsigned),
             timestamp_ms: root.last_seen_ms,
             signature_status: if unsigned > 0 {
                 Some(SignatureStatus::Unsigned)
@@ -373,7 +532,6 @@ fn get_behavior_graph(
             metadata: serde_json::json!({
                 "total_modules": mods.len(),
                 "unsigned_modules": unsigned,
-                "provenance": "Snapshot module enumeration"
             }),
             modules: mods,
         });
@@ -389,7 +547,11 @@ fn get_behavior_graph(
         });
     }
 
-    let min_ts = nodes.iter().map(|n| n.timestamp_ms).min().unwrap_or(root.first_seen_ms);
+    let min_ts = nodes
+        .iter()
+        .map(|n| n.timestamp_ms)
+        .min()
+        .unwrap_or(root.first_seen_ms);
     let max_ts = nodes
         .iter()
         .map(|n| n.timestamp_ms)
@@ -416,11 +578,16 @@ fn get_rule_matches(
         return Ok(DemoFixtureEngine::rule_matches());
     }
     let procs = state.storage.query_processes(200, 0).unwrap_or_default();
-    let conns = state.storage.query_network_connections(200).unwrap_or_default();
+    let conns = state
+        .storage
+        .query_network_connections(200)
+        .unwrap_or_default();
     let mods = state.storage.query_modules(None, 250).unwrap_or_default();
     let caps = state.collector.capabilities();
     let allowlist = state.storage.list_allowlist().unwrap_or_default();
-    Ok(RuleEngine::evaluate(&procs, &conns, &mods, &caps, &allowlist))
+    Ok(RuleEngine::evaluate(
+        &procs, &conns, &mods, &caps, &allowlist,
+    ))
 }
 
 #[tauri::command]
@@ -490,7 +657,10 @@ fn export_report(
         )
     } else {
         let p = state.storage.query_processes(200, 0).unwrap_or_default();
-        let c = state.storage.query_network_connections(200).unwrap_or_default();
+        let c = state
+            .storage
+            .query_network_connections(200)
+            .unwrap_or_default();
         let m = state.storage.query_modules(None, 250).unwrap_or_default();
         let caps = state.collector.capabilities();
         let allow = state.storage.list_allowlist().unwrap_or_default();
@@ -507,7 +677,7 @@ fn clear_local_history(state: State<'_, AppState>) -> Result<(), String> {
     state.storage.clear_history().map_err(|e| e.to_string())?;
     let _ = state
         .storage
-        .append_diagnostic_log("INFO", "Local telemetry history cleared by user.");
+        .append_diagnostic_log("INFO", "Local history cleared.");
     Ok(())
 }
 
@@ -517,19 +687,12 @@ fn get_system_status(
     mode: Option<DataSourceMode>,
 ) -> Result<SystemStatusSnapshot, String> {
     let active_mode = state.current_mode(mode);
-    let settings = state
-        .settings
-        .lock()
-        .map(|s| s.clone())
-        .unwrap_or_default();
+    let settings = state.settings.lock().map(|s| s.clone()).unwrap_or_default();
     let storage = state
         .storage
         .diagnostics(settings.ring_buffer_cap_mb)
         .map_err(|e| e.to_string())?;
-    let logs = state
-        .storage
-        .recent_diagnostic_logs(40)
-        .unwrap_or_default();
+    let logs = state.storage.recent_diagnostic_logs(15).unwrap_or_default();
 
     Ok(SystemStatusSnapshot {
         mode: active_mode,
@@ -561,15 +724,45 @@ pub fn run() {
     let db_path = data_dir.join("silentwatch.db");
     let export_dir = data_dir.join("exports");
 
-    let storage = StorageEngine::open(&db_path).expect("Failed to initialize SilentWatch SQLite WAL storage");
-    let settings = storage.load_settings().unwrap_or_default();
-    let collector = Arc::new(CollectorRuntime::new(settings.privilege_mode));
+    let storage =
+        StorageEngine::open(&db_path).expect("Failed to initialize SilentWatch SQLite WAL storage");
+    let mut settings = storage.load_settings().unwrap_or_default();
+    let mut force_video = false;
 
-    let _ = storage.append_diagnostic_log("INFO", "SilentWatch native host initialized (SQLite WAL active).");
-
-    if settings.onboarding_completed {
-        collector.start();
+    // Apply preferences written by NSIS installer during installation
+    let installer_prefs_path = data_dir.join("installer_prefs.json");
+    if let Ok(raw) = std::fs::read_to_string(&installer_prefs_path) {
+        if let Ok(prefs) = serde_json::from_str::<InstallerPrefs>(&raw) {
+            if let Some(cb) = prefs.close_behavior {
+                settings.close_behavior = cb;
+            }
+            if let Some(pm) = prefs.privilege_mode {
+                settings.privilege_mode = pm;
+            }
+            if prefs.show_release_video.unwrap_or(false) {
+                force_video = true;
+            }
+            settings.onboarding_completed = true;
+            let _ = storage.save_settings(&settings);
+        }
+        let _ = std::fs::remove_file(&installer_prefs_path);
     }
+
+    let collector = Arc::new(CollectorRuntime::new(settings.privilege_mode));
+    // Start real background monitoring immediately (independent of UI window visibility)
+    collector.start();
+    let initial_cycle = collector.collect_once();
+    let _ = storage.upsert_processes(&initial_cycle.processes);
+    let _ = storage.upsert_network_connections(&initial_cycle.connections);
+    let _ = storage.upsert_modules(&initial_cycle.modules);
+    let _ = storage.insert_events_batch(&initial_cycle.events);
+    let _ = storage.append_diagnostic_log(
+        "INFO",
+        &format!(
+            "Engine started ({} active processes).",
+            initial_cycle.processes.len()
+        ),
+    );
 
     let bg_collector = Arc::clone(&collector);
     let bg_storage = storage.clone();
@@ -591,7 +784,8 @@ pub fn run() {
                     tick += 1;
                     if tick % 30 == 0 {
                         if let Ok(cfg) = bg_storage.load_settings() {
-                            let _ = bg_storage.enforce_retention(cfg.retention_hours, cfg.ring_buffer_cap_mb);
+                            let _ = bg_storage
+                                .enforce_retention(cfg.retention_hours, cfg.ring_buffer_cap_mb);
                         }
                     }
                 }
@@ -605,29 +799,46 @@ pub fn run() {
         collector,
         settings: Mutex::new(settings),
         export_dir,
+        force_show_release_video: Mutex::new(force_video),
     };
 
     tauri::Builder::default()
         .manage(app_state)
         .setup(|app| {
-            let show_item = MenuItem::with_id(app, "show", "Show SilentWatch", true, None::<&str>)?;
-            let stop_item = MenuItem::with_id(app, "stop_mon", "Stop Monitoring", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Quit SilentWatch", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_item, &stop_item, &quit_item])?;
+            let open_item = MenuItem::with_id(app, "open", "Open SilentWatch", true, None::<&str>)?;
+            let pause_item =
+                MenuItem::with_id(app, "pause_mon", "Pause Monitoring", true, None::<&str>)?;
+            let resume_item =
+                MenuItem::with_id(app, "resume_mon", "Resume Monitoring", true, None::<&str>)?;
+            let quit_item =
+                MenuItem::with_id(app, "quit", "Stop Services & Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open_item, &pause_item, &resume_item, &quit_item])?;
 
             let mut tray_builder = TrayIconBuilder::new()
                 .menu(&menu)
-                .tooltip("SilentWatch — Local Telemetry")
+                .tooltip("SilentWatch — Background Monitor Active")
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
+                    "open" => {
                         if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.unminimize();
                             let _ = w.show();
                             let _ = w.set_focus();
                         }
                     }
-                    "stop_mon" => {
+                    "pause_mon" => {
                         if let Some(st) = app.try_state::<AppState>() {
                             st.collector.stop();
+                            let _ = st
+                                .storage
+                                .append_diagnostic_log("INFO", "Paused from system tray.");
+                        }
+                    }
+                    "resume_mon" => {
+                        if let Some(st) = app.try_state::<AppState>() {
+                            st.collector.start();
+                            let _ = st
+                                .storage
+                                .append_diagnostic_log("INFO", "Resumed from system tray.");
                         }
                     }
                     "quit" => {
@@ -647,6 +858,7 @@ pub fn run() {
                     } = event
                     {
                         if let Some(w) = tray.app_handle().get_webview_window("main") {
+                            let _ = w.unminimize();
                             let _ = w.show();
                             let _ = w.set_focus();
                         }
@@ -679,6 +891,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             signal_ui_ready,
+            window_minimize,
+            window_toggle_maximize,
+            window_close_to_tray,
+            should_show_release_video,
+            mark_release_video_seen,
+            check_for_updates,
             get_settings,
             save_settings,
             start_monitoring,

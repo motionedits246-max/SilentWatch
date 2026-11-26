@@ -21,6 +21,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 dirs.workspace = true
 uuid.workspace = true
+ureq.workspace = true
 silentwatch-core = { path = "../crates/silentwatch-core" }
 silentwatch-collectors = { path = "../crates/silentwatch-collectors" }
 silentwatch-storage = { path = "../crates/silentwatch-storage" }

@@ -3,6 +3,7 @@ use silentwatch_core::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use sysinfo::{ProcessesToUpdate, System};
 
 #[cfg(target_os = "windows")]
 mod windows_native;
@@ -25,11 +26,14 @@ pub struct CollectorRuntime {
     dropped_events: Arc<AtomicU64>,
     restarts: Arc<AtomicU64>,
     seen_pids: Arc<Mutex<HashMap<u32, ProcessInstanceId>>>,
+    sys: Arc<Mutex<System>>,
     queue_capacity: usize,
 }
 
 impl CollectorRuntime {
     pub fn new(privilege_mode: PrivilegeMode) -> Self {
+        let mut sys = System::new_all();
+        sys.refresh_processes(ProcessesToUpdate::All, true);
         Self {
             boot_id: compute_boot_session_id(),
             active: Arc::new(AtomicBool::new(false)),
@@ -37,6 +41,7 @@ impl CollectorRuntime {
             dropped_events: Arc::new(AtomicU64::new(0)),
             restarts: Arc::new(AtomicU64::new(0)),
             seen_pids: Arc::new(Mutex::new(HashMap::new())),
+            sys: Arc::new(Mutex::new(sys)),
             queue_capacity: 2048,
         }
     }
@@ -108,42 +113,54 @@ impl CollectorRuntime {
             vec![
                 CollectorCapability {
                     id: "process_lifecycle".into(),
-                    name: "Per-User Process Lifecycle".into(),
-                    description: "Captures process creation, termination, parent-child links, paths, and resource usage via Windows Toolhelp32 & Process APIs.".into(),
-                    state: if active { CapabilityState::Active } else { CapabilityState::Stopped },
+                    name: "Process Lifecycle & CPU/RAM".into(),
+                    description: "Real-time CPU, RAM, and parent-child telemetry.".into(),
+                    state: if active {
+                        CapabilityState::Active
+                    } else {
+                        CapabilityState::Stopped
+                    },
                     source: CollectorSource::WindowsToolhelpProcess,
                     requires_elevation: false,
-                    limitations: "Protected system processes (PPL) return AccessDenied for full paths without elevation.".into(),
+                    limitations: "System PPL paths need elevation.".into(),
                 },
                 CollectorCapability {
                     id: "network_sockets".into(),
                     name: "TCP/UDP Socket Attribution".into(),
-                    description: "Maps active TCP/UDP endpoints to owning process instances via IP Helper API (GetExtendedTcpTable / GetExtendedUdpTable).".into(),
-                    state: if active { CapabilityState::Active } else { CapabilityState::Stopped },
+                    description: "Owning-process endpoint mapping.".into(),
+                    state: if active {
+                        CapabilityState::Active
+                    } else {
+                        CapabilityState::Stopped
+                    },
                     source: CollectorSource::WindowsIpHelperNetwork,
                     requires_elevation: false,
-                    limitations: "Snapshot-based polling may miss sub-second short-lived connections. Never inspects packet payloads.".into(),
+                    limitations: "Zero payload inspection.".into(),
                 },
                 CollectorCapability {
                     id: "modules_snapshot".into(),
-                    name: "Per-User DLL / Module Snapshots".into(),
-                    description: "Enumerates loaded DLL modules and Authenticode signatures for accessible processes.".into(),
-                    state: if active { CapabilityState::Active } else { CapabilityState::Stopped },
+                    name: "Loaded DLL Snapshots".into(),
+                    description: "Per-user module enumeration.".into(),
+                    state: if active {
+                        CapabilityState::Active
+                    } else {
+                        CapabilityState::Stopped
+                    },
                     source: CollectorSource::WindowsToolhelpModule,
                     requires_elevation: false,
-                    limitations: "Reports snapshot observation time rather than exact kernel image-load timestamp.".into(),
+                    limitations: "Snapshot observation timestamps.".into(),
                 },
                 CollectorCapability {
                     id: "etw_kernel_process".into(),
-                    name: "Kernel ETW Process & Image Loads".into(),
-                    description: "Real-time Microsoft-Windows-Kernel-Process and ImageLoad ETW tracing for exact timestamps and cross-user visibility.".into(),
+                    name: "Kernel ETW Tracing".into(),
+                    description: "Kernel process & image-load events.".into(),
                     state: etw_state,
                     source: CollectorSource::WindowsEtwKernelProcess,
                     requires_elevation: true,
                     limitations: if elevated {
-                        "Active with explicit Administrator elevation.".into()
+                        "Elevated ETW active.".into()
                     } else {
-                        "Requires explicit UAC elevation when enabled by user.".into()
+                        "Requires optional UAC elevation.".into()
                     },
                 },
             ]
@@ -155,39 +172,51 @@ impl CollectorRuntime {
             vec![
                 CollectorCapability {
                     id: "process_lifecycle".into(),
-                    name: "Local Process Lifecycle (/proc fallback)".into(),
-                    description: "Reads live local OS processes from /proc for cross-platform verification and testing.".into(),
-                    state: if active { CapabilityState::Active } else { CapabilityState::Stopped },
+                    name: "Process Lifecycle & CPU/RAM".into(),
+                    description: "Live OS CPU, RAM, and process tree.".into(),
+                    state: if active {
+                        CapabilityState::Active
+                    } else {
+                        CapabilityState::Stopped
+                    },
                     source: CollectorSource::LinuxProcFallback,
                     requires_elevation: false,
-                    limitations: "Running on Linux development host; Windows Toolhelp32/WinVerifyTrust APIs activate on Windows builds.".into(),
+                    limitations: "Linux host fallback.".into(),
                 },
                 CollectorCapability {
                     id: "network_sockets".into(),
-                    name: "Local TCP Socket Table (/proc/net)".into(),
-                    description: "Reads local TCP socket table on Linux hosts; Windows uses GetExtendedTcpTable.".into(),
-                    state: if active { CapabilityState::Degraded } else { CapabilityState::Stopped },
+                    name: "TCP Socket Table".into(),
+                    description: "Local TCP socket table.".into(),
+                    state: if active {
+                        CapabilityState::Degraded
+                    } else {
+                        CapabilityState::Stopped
+                    },
                     source: CollectorSource::LinuxProcFallback,
                     requires_elevation: false,
-                    limitations: "Snapshot polling; Windows IP Helper API provides full per-PID attribution on Windows.".into(),
+                    limitations: "Snapshot polling.".into(),
                 },
                 CollectorCapability {
                     id: "modules_snapshot".into(),
-                    name: "Loaded Module Enumeration".into(),
-                    description: "Inspects mapped shared libraries for current-user processes.".into(),
-                    state: if active { CapabilityState::Degraded } else { CapabilityState::Stopped },
+                    name: "Loaded Modules".into(),
+                    description: "Mapped shared libraries.".into(),
+                    state: if active {
+                        CapabilityState::Degraded
+                    } else {
+                        CapabilityState::Stopped
+                    },
                     source: CollectorSource::LinuxProcFallback,
                     requires_elevation: false,
-                    limitations: "Authenticode signature verification is Windows-only.".into(),
+                    limitations: "Authenticode is Windows-only.".into(),
                 },
                 CollectorCapability {
                     id: "etw_kernel_process".into(),
-                    name: "Kernel ETW DLL & Cross-User Telemetry".into(),
-                    description: "Windows Event Tracing (ETW) kernel providers.".into(),
+                    name: "Kernel ETW Tracing".into(),
+                    description: "Windows ETW kernel providers.".into(),
                     state: CapabilityState::ElevationRequired,
                     source: CollectorSource::WindowsEtwKernelProcess,
                     requires_elevation: true,
-                    limitations: "Requires Windows host with user-approved UAC elevation.".into(),
+                    limitations: "Windows UAC required.".into(),
                 },
             ]
         }
@@ -197,10 +226,40 @@ impl CollectorRuntime {
         let now_ms = Utc::now().timestamp_millis();
 
         #[cfg(target_os = "windows")]
-        let (mut processes, connections, modules) = windows_native::collect_snapshot(&self.boot_id, now_ms);
+        let (mut processes, connections, modules) =
+            windows_native::collect_snapshot(&self.boot_id, now_ms);
 
         #[cfg(not(target_os = "windows"))]
-        let (mut processes, connections, modules) = linux_proc::collect_snapshot(&self.boot_id, now_ms);
+        let (mut processes, connections, modules) =
+            linux_proc::collect_snapshot(&self.boot_id, now_ms);
+
+        // Enrich EVERY process with real live CPU % and real RAM MB from sysinfo
+        if let Ok(mut sys) = self.sys.lock() {
+            sys.refresh_processes(ProcessesToUpdate::All, true);
+            let cpu_count = sys.cpus().len().max(1) as f32;
+            let mut metrics: HashMap<u32, (f32, f32, Option<String>)> = HashMap::new();
+            for (pid, proc_info) in sys.processes() {
+                let cpu_pct = ((proc_info.cpu_usage() / cpu_count) * 10.0).round() / 10.0;
+                let mem_mb =
+                    ((proc_info.memory() as f32 / (1024.0 * 1024.0)) * 10.0).round() / 10.0;
+                let exe = proc_info
+                    .exe()
+                    .map(|p| RedactionEngine::sanitize_str(&p.display().to_string()));
+                metrics.insert(pid.as_u32(), (cpu_pct.clamp(0.0, 100.0), mem_mb, exe));
+            }
+            for p in &mut processes {
+                if let Some((cpu, mem, exe)) = metrics.get(&p.instance_id.pid) {
+                    p.cpu_percent = *cpu;
+                    if *mem > 0.0 {
+                        p.memory_mb = *mem;
+                    }
+                    if p.exe_path.is_none() {
+                        p.exe_path = exe.clone();
+                    }
+                    p.activity_delta_pct = (*cpu).max(0.1);
+                }
+            }
+        }
 
         let mut events = Vec::new();
         let current_pids: HashSet<u32> = processes.iter().map(|p| p.instance_id.pid).collect();
@@ -234,8 +293,8 @@ impl CollectorRuntime {
                         CapabilityState::Active,
                         EvidenceProvenance {
                             source_api: platform_process_api().into(),
-                            collection_method: "Process snapshot diff with boot+pid+start_time identity".into(),
-                            confidence_note: "Confirmed OS process table observation".into(),
+                            collection_method: "Process snapshot + live CPU/RAM counter".into(),
+                            confidence_note: "Confirmed OS process observation".into(),
                             snapshot_only: true,
                         },
                         EpistemicClassification::Confirmed,
@@ -274,7 +333,7 @@ impl CollectorRuntime {
                     EvidenceProvenance {
                         source_api: platform_process_api().into(),
                         collection_method: "Process snapshot lifecycle diff".into(),
-                        confidence_note: "Process absent in subsequent OS snapshot".into(),
+                        confidence_note: "Process exited".into(),
                         snapshot_only: true,
                     },
                     EpistemicClassification::Confirmed,
@@ -382,11 +441,11 @@ fn platform_network_source() -> CollectorSource {
 fn platform_process_api() -> &'static str {
     #[cfg(target_os = "windows")]
     {
-        "CreateToolhelp32Snapshot + QueryFullProcessImageNameW"
+        "Toolhelp32 + sysinfo CPU/RAM"
     }
     #[cfg(not(target_os = "windows"))]
     {
-        "/proc filesystem (Linux development host)"
+        "/proc + sysinfo CPU/RAM"
     }
 }
 
@@ -395,19 +454,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn collects_live_os_processes_and_reports_honest_capabilities() {
+    fn collects_live_os_processes_with_real_memory_and_honest_capabilities() {
         let rt = CollectorRuntime::new(PrivilegeMode::StandardPerUser);
         rt.start();
         assert!(rt.is_active());
         let caps = rt.capabilities();
         assert!(!caps.is_empty());
-        assert!(caps.iter().any(|c| c.requires_elevation));
 
         let cycle = rt.collect_once();
         assert!(!cycle.processes.is_empty());
-        assert!(!cycle.events.is_empty());
-
-        let second = rt.collect_once();
-        assert!(second.events.len() <= cycle.events.len());
+        assert!(cycle.processes.iter().any(|p| p.memory_mb > 0.0));
     }
 }

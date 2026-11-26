@@ -36,6 +36,7 @@ impl Default for ShortcutConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
+    #[serde(default = "default_true")]
     pub onboarding_completed: bool,
     pub privilege_mode: PrivilegeMode,
     pub data_source_mode: DataSourceMode,
@@ -46,13 +47,22 @@ pub struct AppSettings {
     pub start_minimized_to_tray: bool,
     pub collect_command_line_sanitized: bool,
     pub collect_module_snapshots: bool,
+    #[serde(default)]
+    pub last_seen_version: Option<String>,
+    #[serde(default = "default_true")]
+    pub auto_check_updates: bool,
     pub shortcuts: ShortcutConfig,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            onboarding_completed: false,
+            // Setup questions are handled during NSIS installation; app launches directly to dashboard
+            onboarding_completed: true,
             privilege_mode: PrivilegeMode::StandardPerUser,
             data_source_mode: DataSourceMode::Live,
             motion_tier: MotionTier::Full,
@@ -62,6 +72,8 @@ impl Default for AppSettings {
             start_minimized_to_tray: false,
             collect_command_line_sanitized: true,
             collect_module_snapshots: true,
+            last_seen_version: None,
+            auto_check_updates: true,
             shortcuts: ShortcutConfig::default(),
         }
     }
