@@ -76,7 +76,6 @@
     .shield-wrap {
       position: relative; width: 92px; height: 92px;
       display: flex; align-items: center; justify-content: center;
-      filter: drop-shadow(0 0 20px rgba(163, 230, 53, 0.35));
     }
     .brand-title {
       margin-top: 18px; font-size: 28px; font-weight: 700; letter-spacing: -0.02em;
@@ -277,10 +276,9 @@
     <div class="titlebar">
       <div class="titlebar-left" onmousedown="sendIpc('drag')">
         <svg width="20" height="20" viewBox="0 0 28 28" fill="none">
-          <path d="M14 2.5L23.5 6.2V13.8C23.5 19.6 19.4 23.8 14 25.5C8.6 23.8 4.5 19.6 4.5 13.8V6.2L14 2.5Z" stroke="#a3e635" stroke-width="2" fill="rgba(163,230,53,0.1)"/>
-          <circle cx="14" cy="13.5" r="5" stroke="#a3e635" stroke-width="1.3" opacity="0.7"/>
-          <line x1="14" y1="13.5" x2="17.8" y2="9.7" stroke="#a3e635" stroke-width="1.8" stroke-linecap="round"/>
-          <circle cx="14" cy="13.5" r="1.6" fill="#a3e635"/>
+          <rect x="1.5" y="1.5" width="25" height="25" rx="6" fill="#18181b" stroke="#3f3f46" stroke-width="1"/>
+          <path d="M14 6L20.5 8.5V14.2C20.5 18.2 17.7 21.1 14 22.3C10.3 21.1 7.5 18.2 7.5 14.2V8.5L14 6Z" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M14 10.5V16.8M11.4 14.4L14 17L16.6 14.4" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
         <span>SilentWatch Setup</span>
       </div>
@@ -293,13 +291,11 @@
     <div class="body">
       <aside class="sidebar">
         <div class="shield-wrap">
-          <svg width="86" height="86" viewBox="0 0 88 88" fill="none">
-            <path d="M44 6L74 17.5V42.5C74 61.5 60.8 75.5 44 82C27.2 75.5 14 61.5 14 42.5V17.5L44 6Z" stroke="#a3e635" stroke-width="4" fill="rgba(163,230,53,0.06)"/>
-            <circle cx="44" cy="43" r="22" stroke="#a3e635" stroke-width="1.5" opacity="0.6"/>
-            <circle cx="44" cy="43" r="13" stroke="#a3e635" stroke-width="1.3" opacity="0.5"/>
-            <line x1="44" y1="43" x2="59" y2="28" stroke="#a3e635" stroke-width="3" stroke-linecap="round"/>
-            <circle cx="59" cy="28" r="3" fill="#d9f99d"/>
-            <circle cx="44" cy="43" r="3.5" fill="#a3e635"/>
+          <svg width="84" height="84" viewBox="0 0 88 88" fill="none">
+            <rect x="4" y="4" width="80" height="80" rx="20" fill="#18181b" stroke="#27272a" stroke-width="1.5"/>
+            <path d="M44 19L65 27V44.5C65 57.5 56 67 44 71C32 67 23 57.5 23 44.5V27L44 19Z" stroke="#ffffff" stroke-width="3.6" stroke-linejoin="round"/>
+            <path d="M31 44C34.5 38.2 39 35.5 44 35.5C49 35.5 53.5 38.2 57 44C53.5 49.8 49 52.5 44 52.5C39 52.5 34.5 49.8 31 44Z" stroke="#ffffff" stroke-width="3.2" stroke-linejoin="round"/>
+            <circle cx="44" cy="44" r="3.8" fill="#ffffff"/>
           </svg>
         </div>
         <div class="brand-title"><span class="white">Silent</span><span class="lime">Watch</span></div>

@@ -118,7 +118,7 @@ export const LaunchIntro: React.FC<LaunchIntroProps> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              filter: 'drop-shadow(0 0 28px rgba(139, 92, 246, 0.65))',
+              borderRadius: 20, border: '1px solid rgba(255, 255, 255, 0.12)',
               flexShrink: 0,
             }}
           >
