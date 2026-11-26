@@ -1,40 +1,36 @@
 import React from 'react';
 import type { MotionTier } from '@/types/telemetry';
 
+/**
+ * Original SilentWatch Visual Asset Suite
+ * Asset #1: Official SilentWatch Brand Mark
+ * Asset #3: Sculptural Optical-Glass Centerpiece (ART-DIR-01)
+ * Asset #6: Luminous Orbital Liquid-Glass System Activity Core
+ * Asset #7: Empty-State Monochrome Hairline Illustrations
+ * Asset #9: Frosted Export Folder Sleeve Illustration
+ */
+
 export const SilentWatchMark: React.FC<{
   size?: number;
   variant?: 'dark' | 'light';
   className?: string;
-}> = ({ size = 22, variant = 'dark', className = '' }) => {
-  const topColor = variant === 'dark' ? '#F5D0FE' : '#181818';
-  const leftColor = variant === 'dark' ? '#D946EF' : '#404040';
-  const rightColor = variant === 'dark' ? '#F8F7FA' : '#181818';
-  const ringColor = variant === 'dark' ? 'rgba(232,121,249,0.38)' : 'rgba(24,24,24,0.18)';
-  const lineColor = variant === 'dark' ? 'rgba(232,121,249,0.48)' : 'rgba(24,24,24,0.28)';
-
+}> = ({ size = 22, className = '' }) => {
   return (
-    <svg
+    <img
+      src="/icons/app-logo.png"
+      alt="SilentWatch"
       width={size}
       height={size}
-      viewBox="0 0 32 32"
-      fill="none"
       className={className}
-      aria-hidden="true"
-    >
-      <circle cx="16" cy="16" r="13.5" stroke={ringColor} strokeWidth="1.25" />
-      <path d="M16 7.5L23.36 20.25H8.64L16 7.5Z" stroke={lineColor} strokeWidth="1.15" />
-      <circle cx="16" cy="7.5" r="3.1" fill={topColor} />
-      <circle cx="23.36" cy="20.25" r="3.1" fill={rightColor} />
-      <circle cx="8.64" cy="20.25" r="3.1" fill={leftColor} />
-      <circle
-        cx="16"
-        cy="16"
-        r="1.6"
-        fill={variant === 'dark' ? '#0A0A0A' : '#FBFAF6'}
-        stroke={leftColor}
-        strokeWidth="1.1"
-      />
-    </svg>
+      draggable={false}
+      style={{
+        width: size,
+        height: size,
+        objectFit: 'contain',
+        display: 'block',
+        borderRadius: Math.max(4, Math.round(size * 0.22)),
+      }}
+    />
   );
 };
 
@@ -139,7 +135,6 @@ export const SystemActivityCore: React.FC<{
           pointerEvents: 'none',
         }}
       />
-
       <div
         className={animate ? 'sw-orbit-spin' : ''}
         style={{
@@ -156,7 +151,6 @@ export const SystemActivityCore: React.FC<{
           opacity: active ? 0.96 : 0.45,
         }}
       />
-
       <svg
         width={118}
         height={118}
@@ -182,7 +176,6 @@ export const SystemActivityCore: React.FC<{
           style={{ filter: active ? `drop-shadow(0 0 6px ${primary})` : undefined }}
         />
       </svg>
-
       <div
         style={{
           position: 'relative',

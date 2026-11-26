@@ -3,11 +3,11 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "SilentWatch — Windows-first, local-first application behavior monitoring and investigation tool",
+  "description": "SilentWatch \u2014 Windows-first, local-first application behavior monitoring and investigation tool",
   "scripts": {
     "predev": "node scripts/unpack-videos.mjs",
     "dev": "vite",
-    "prebuild": "node scripts/unpack-videos.mjs",
+    "prebuild": "node scripts/unpack-icons.mjs && node scripts/unpack-videos.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
