@@ -1,0 +1,85 @@
+name: SilentWatch CI & Custom Windows Installer Build
+
+on:
+  push:
+    branches: [silentwatch-gemini, main]
+  pull_request:
+    branches: [silentwatch-gemini, main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust-core-checks:
+    name: Rust Core (Format, Clippy, Unit Tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+      - name: Run Clippy on core crates
+        run: cargo clippy --workspace --exclude silentwatch-desktop --all-targets -- -D warnings
+      - name: Run Rust workspace unit tests
+        run: cargo test --workspace --exclude silentwatch-desktop
+
+  frontend-checks:
+    name: Frontend (Typecheck, Vitest, Vite Build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: TypeScript strict typecheck
+        run: npm run typecheck
+      - name: Run Vitest component & interaction tests
+        run: npm test
+      - name: Production Vite build
+        run: npm run build
+
+  windows-tauri-build:
+    name: Windows Desktop App & Custom SilentWatch-Setup.exe
+    runs-on: windows-latest
+    needs: [rust-core-checks, frontend-checks]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Run Windows Rust collector & core tests
+        run: cargo test --workspace --exclude silentwatch-desktop
+      - name: Build SilentWatch Windows desktop binary (no default NSIS)
+        run: npx tauri build --no-bundle
+      - name: Compress silentwatch-desktop.exe into custom installer payload
+        shell: pwsh
+        run: |
+          $src = "target/release/silentwatch-desktop.exe"
+          $dst = "crates/silentwatch-installer/payload/silentwatch-desktop.exe.gz"
+          New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
+          $inStream = [System.IO.File]::OpenRead($src)
+          $outStream = [System.IO.File]::Create($dst)
+          $gzip = New-Object System.IO.Compression.GzipStream($outStream, [System.IO.Compression.CompressionLevel]::Optimal)
+          $inStream.CopyTo($gzip)
+          $gzip.Close()
+          $outStream.Close()
+          $inStream.Close()
+          Get-Item $dst | Select-Object Name, Length
+      - name: Build custom SilentWatch-Setup.exe installer
+        run: cargo build --release -p silentwatch-installer
+      - name: Upload custom SilentWatch-Setup.exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: silentwatch-custom-installer
+          path: |
+            target/release/SilentWatch-Setup.exe
+            target/release/silentwatch-desktop.exe

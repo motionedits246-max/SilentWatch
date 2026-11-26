@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SilentWatch Setup</title>
+  <style>
+    :root {
+      --bg-window: #0d1015;
+      --bg-sidebar: #090c10;
+      --bg-panel: #11151c;
+      --bg-input: #0a0d12;
+      --border: rgba(255, 255, 255, 0.11);
+      --border-strong: rgba(255, 255, 255, 0.18);
+      --accent: #a3e635;
+      --accent-glow: rgba(163, 230, 53, 0.32);
+      --accent-dim: rgba(163, 230, 53, 0.14);
+      --text-primary: #f4f6f9;
+      --text-secondary: #9aa4b2;
+      --text-muted: #687382;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Inter, sans-serif;
+      background: var(--bg-window);
+      color: var(--text-primary);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .window {
+      width: 100vw; height: 100vh;
+      display: flex; flex-direction: column;
+      border: 1px solid var(--border);
+      background: var(--bg-window);
+    }
+
+    /* Custom Frameless Titlebar */
+    .titlebar {
+      height: 44px; min-height: 44px;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 12px 0 16px;
+      background: #0d1016;
+      border-bottom: 1px solid var(--border);
+    }
+    .titlebar-left {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13.5px; font-weight: 500; color: #e2e8f0;
+      flex: 1; height: 100%; cursor: default;
+    }
+    .win-controls { display: flex; align-items: center; gap: 4px; }
+    .win-btn {
+      width: 34px; height: 28px; border: none; border-radius: 6px;
+      background: transparent; color: #94a3b8; font-size: 15px;
+      display: inline-flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: background 120ms ease, color 120ms ease;
+    }
+    .win-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    .win-btn.close:hover { background: #dc2626; color: #fff; }
+
+    /* Main Split Body */
+    .body {
+      flex: 1; display: grid; grid-template-columns: 270px 1fr;
+      min-height: 0;
+    }
+
+    /* Left Brand & Radar Sidebar */
+    .sidebar {
+      position: relative; overflow: hidden;
+      background: linear-gradient(180deg, #0d1117 0%, #07090d 100%);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; align-items: center;
+      padding: 44px 20px 20px;
+    }
+    .shield-wrap {
+      position: relative; width: 92px; height: 92px;
+      display: flex; align-items: center; justify-content: center;
+      filter: drop-shadow(0 0 20px rgba(163, 230, 53, 0.35));
+    }
+    .brand-title {
+      margin-top: 18px; font-size: 28px; font-weight: 700; letter-spacing: -0.02em;
+    }
+    .brand-title .white { color: #ffffff; }
+    .brand-title .lime { color: var(--accent); }
+    .brand-sub {
+      margin-top: 8px; display: flex; align-items: center; gap: 8px;
+      font-size: 10px; font-weight: 600; letter-spacing: 0.16em;
+      color: var(--text-secondary);
+    }
+    .brand-sub::before, .brand-sub::after {
+      content: ''; width: 14px; height: 1px; background: rgba(255,255,255,0.22);
+    }
+    .ver-pill {
+      margin-top: 16px; padding: 4px 14px; border-radius: 6px;
+      border: 1px solid rgba(163, 230, 53, 0.45);
+      background: rgba(163, 230, 53, 0.08);
+      font-family: 'Consolas', monospace; font-size: 11.5px; color: #d9f99d;
+    }
+
+    /* Bottom Radar Graphic */
+    .radar-wrap {
+      position: absolute; bottom: -26px; left: 50%; transform: translateX(-50%);
+      width: 260px; height: 210px; pointer-events: none;
+    }
+    @keyframes radarSpin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .radar-sweep {
+      transform-origin: 130px 150px;
+      animation: radarSpin 5.5s linear infinite;
+    }
+
+    /* Right Wizard Panel */
+    .wizard {
+      display: flex; flex-direction: column;
+      background: radial-gradient(circle at 80% 10%, rgba(163, 230, 53, 0.045), transparent 45%), var(--bg-panel);
+      min-height: 0;
+    }
+
+    /* Stepper Header */
+    .stepper {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 24px 36px 20px;
+      gap: 10px;
+    }
+    .step {
+      display: flex; align-items: center; gap: 9px;
+      font-size: 13px; font-weight: 500; color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .step-num {
+      width: 26px; height: 26px; border-radius: 50%;
+      border: 1.5px solid rgba(255,255,255,0.2);
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 600; color: var(--text-secondary);
+    }
+    .step.active { color: var(--accent); }
+    .step.active .step-num {
+      border-color: var(--accent); color: var(--accent);
+      background: var(--accent-dim);
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+    .step.done { color: #cbd5e1; }
+    .step.done .step-num {
+      border-color: var(--accent); background: var(--accent); color: #090c10;
+    }
+    .step-line {
+      flex: 1; height: 1px; background: rgba(255,255,255,0.14);
+    }
+
+    /* Step Content */
+    .content {
+      flex: 1; padding: 14px 38px 18px;
+      display: flex; flex-direction: column;
+    }
+    .page { display: none; flex-direction: column; flex: 1; }
+    .page.active { display: flex; }
+
+    .heading-row {
+      display: flex; align-items: center; gap: 12px;
+    }
+    .heading-bar {
+      width: 4px; height: 30px; border-radius: 3px; background: var(--accent);
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+    .heading { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+    .subhead {
+      margin-top: 6px; margin-left: 16px;
+      font-size: 13.5px; color: var(--text-secondary);
+    }
+
+    .field-label {
+      margin-top: 26px; font-size: 13px; font-weight: 500; color: #e2e8f0;
+    }
+    .path-row {
+      margin-top: 10px; display: flex; gap: 10px;
+    }
+    .path-input {
+      flex: 1; height: 42px; padding: 0 14px;
+      border-radius: 8px; border: 1px solid var(--border-strong);
+      background: var(--bg-input); color: #f8fafc;
+      font-size: 14px; outline: none; user-select: text;
+    }
+    .path-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(163,230,53,0.16); }
+    .btn-secondary {
+      height: 42px; padding: 0 20px; border-radius: 8px;
+      border: 1px solid var(--border-strong);
+      background: rgba(255,255,255,0.05); color: #f1f5f9;
+      font-size: 13.5px; font-weight: 500; cursor: pointer;
+      transition: background 130ms ease, border-color 130ms ease;
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.28); }
+
+    .space-row {
+      margin-top: 14px; display: flex; align-items: center; gap: 9px;
+      font-size: 13px; color: var(--text-secondary);
+    }
+
+    .checks { margin-top: 24px; display: flex; flex-direction: column; gap: 13px; }
+    .check-item {
+      display: inline-flex; align-items: center; gap: 11px;
+      font-size: 14px; color: #e2e8f0; cursor: pointer;
+    }
+    .check-box {
+      width: 19px; height: 19px; border-radius: 5px;
+      border: 1.5px solid var(--border-strong);
+      background: var(--bg-input);
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: all 120ms ease;
+    }
+    .check-item.checked .check-box {
+      background: var(--accent); border-color: var(--accent); color: #090c10;
+    }
+
+    /* Feature cards on Welcome step */
+    .welcome-grid {
+      margin-top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    }
+    .welcome-card {
+      padding: 14px 16px; border-radius: 10px;
+      border: 1px solid var(--border); background: rgba(255,255,255,0.025);
+    }
+    .welcome-card h4 { font-size: 13px; font-weight: 600; color: #f8fafc; margin-bottom: 4px; }
+    .welcome-card p { font-size: 12px; color: var(--text-secondary); line-height: 1.45; }
+
+    /* Progress Bar on Install step */
+    .progress-box { margin-top: 34px; }
+    .progress-meta {
+      display: flex; justify-content: space-between; font-size: 13px;
+      color: #cbd5e1; margin-bottom: 10px;
+    }
+    .progress-track {
+      width: 100%; height: 10px; border-radius: 999px;
+      background: rgba(255,255,255,0.08); overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; width: 0%; border-radius: 999px;
+      background: linear-gradient(90deg, #84cc16, #a3e635);
+      box-shadow: 0 0 14px var(--accent-glow);
+      transition: width 240ms ease;
+    }
+    .install-log {
+      margin-top: 16px; padding: 12px 14px; border-radius: 8px;
+      background: var(--bg-input); border: 1px solid var(--border);
+      font-family: 'Consolas', monospace; font-size: 11.5px; color: #94a3b8;
+      height: 112px; overflow-y: auto; line-height: 1.6;
+    }
+
+    /* Footer */
+    .footer {
+      height: 70px; min-height: 70px;
+      padding: 0 36px;
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: flex-end; gap: 12px;
+    }
+    .btn-primary {
+      height: 40px; padding: 0 24px; border-radius: 8px; border: none;
+      background: var(--accent); color: #090c10;
+      font-size: 14px; font-weight: 700; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 8px;
+      box-shadow: 0 4px 18px var(--accent-glow);
+      transition: transform 110ms ease, filter 110ms ease;
+    }
+    .btn-primary:hover { filter: brightness(1.06); transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    .btn-ghost {
+      height: 40px; padding: 0 16px; border: none; background: transparent;
+      color: var(--text-secondary); font-size: 13.5px; font-weight: 500; cursor: pointer;
+    }
+    .btn-ghost:hover { color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="window">
+    <div class="titlebar">
+      <div class="titlebar-left" onmousedown="sendIpc('drag')">
+        <svg width="20" height="20" viewBox="0 0 28 28" fill="none">
+          <path d="M14 2.5L23.5 6.2V13.8C23.5 19.6 19.4 23.8 14 25.5C8.6 23.8 4.5 19.6 4.5 13.8V6.2L14 2.5Z" stroke="#a3e635" stroke-width="2" fill="rgba(163,230,53,0.1)"/>
+          <circle cx="14" cy="13.5" r="5" stroke="#a3e635" stroke-width="1.3" opacity="0.7"/>
+          <line x1="14" y1="13.5" x2="17.8" y2="9.7" stroke="#a3e635" stroke-width="1.8" stroke-linecap="round"/>
+          <circle cx="14" cy="13.5" r="1.6" fill="#a3e635"/>
+        </svg>
+        <span>SilentWatch Setup</span>
+      </div>
+      <div class="win-controls">
+        <button class="win-btn" title="Minimize" onclick="sendIpc('minimize')">&#x2014;</button>
+        <button class="win-btn close" title="Close" onclick="sendIpc('cancel')">&#x2715;</button>
+      </div>
+    </div>
+
+    <div class="body">
+      <aside class="sidebar">
+        <div class="shield-wrap">
+          <svg width="86" height="86" viewBox="0 0 88 88" fill="none">
+            <path d="M44 6L74 17.5V42.5C74 61.5 60.8 75.5 44 82C27.2 75.5 14 61.5 14 42.5V17.5L44 6Z" stroke="#a3e635" stroke-width="4" fill="rgba(163,230,53,0.06)"/>
+            <circle cx="44" cy="43" r="22" stroke="#a3e635" stroke-width="1.5" opacity="0.6"/>
+            <circle cx="44" cy="43" r="13" stroke="#a3e635" stroke-width="1.3" opacity="0.5"/>
+            <line x1="44" y1="43" x2="59" y2="28" stroke="#a3e635" stroke-width="3" stroke-linecap="round"/>
+            <circle cx="59" cy="28" r="3" fill="#d9f99d"/>
+            <circle cx="44" cy="43" r="3.5" fill="#a3e635"/>
+          </svg>
+        </div>
+        <div class="brand-title"><span class="white">Silent</span><span class="lime">Watch</span></div>
+        <div class="brand-sub">SYSTEM ACTIVITY MONITOR</div>
+        <div class="ver-pill">v0.1.0</div>
+
+        <div class="radar-wrap">
+          <svg width="260" height="210" viewBox="0 0 260 210" fill="none">
+            <defs>
+              <radialGradient id="sweepGrad" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#a3e635" stop-opacity="0.42"/>
+                <stop offset="100%" stop-color="#a3e635" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+            <circle cx="130" cy="150" r="115" stroke="rgba(163,230,53,0.16)" stroke-width="1"/>
+            <circle cx="130" cy="150" r="82" stroke="rgba(163,230,53,0.22)" stroke-width="1"/>
+            <circle cx="130" cy="150" r="48" stroke="rgba(163,230,53,0.28)" stroke-width="1"/>
+            <g class="radar-sweep">
+              <path d="M130 150 L130 35 A115 115 0 0 1 218 76 Z" fill="url(#sweepGrad)"/>
+              <line x1="130" y1="150" x2="218" y2="76" stroke="#a3e635" stroke-width="1.6" opacity="0.8"/>
+            </g>
+            <circle cx="62" cy="122" r="2.5" fill="#a3e635" opacity="0.8"/>
+            <circle cx="130" cy="150" r="4.5" fill="#bef264"/>
+          </svg>
+        </div>
+      </aside>
+
+      <main class="wizard">
+        <div class="stepper">
+          <div class="step active" id="st-1"><span class="step-num">01</span><span>Welcome</span></div>
+          <div class="step-line"></div>
+          <div class="step" id="st-2"><span class="step-num">02</span><span>Install location</span></div>
+          <div class="step-line"></div>
+          <div class="step" id="st-3"><span class="step-num">03</span><span>Install</span></div>
+          <div class="step-line"></div>
+          <div class="step" id="st-4"><span class="step-num">04</span><span>Finish</span></div>
+        </div>
+
+        <div class="content">
+          <!-- Step 1: Welcome -->
+          <section class="page active" id="page-1">
+            <div class="heading-row">
+              <span class="heading-bar"></span>
+              <h1 class="heading">Welcome to SilentWatch</h1>
+            </div>
+            <p class="subhead">Local-first Windows process, network, and module visibility with zero cloud uploads.</p>
+
+            <div class="welcome-grid">
+              <div class="welcome-card">
+                <h4>Real-Time Process Telemetry</h4>
+                <p>Live CPU, RAM, parent-child process trees, and signature verification on your PC.</p>
+              </div>
+              <div class="welcome-card">
+                <h4>Background System Tray</h4>
+                <p>Runs quietly in the Windows tray so you can pause or stop collection anytime.</p>
+              </div>
+              <div class="welcome-card">
+                <h4>100% Local SQLite WAL</h4>
+                <p>Bounded ring-buffer storage with zero accounts, subscriptions, or remote tracking.</p>
+              </div>
+              <div class="welcome-card">
+                <h4>GitHub Release Updates</h4>
+                <p>Built-in release checker with What's New showcases whenever a new version ships.</p>
+              </div>
+            </div>
+
+            <div class="checks" style="margin-top: 20px;">
+              <div class="check-item checked" id="chk-tray" onclick="toggleCheck('chk-tray')">
+                <span class="check-box">&#x2713;</span>
+                <span>Keep monitoring in background System Tray when window closes</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Step 2: Install Location (Matches Reference Image) -->
+          <section class="page" id="page-2">
+            <div class="heading-row">
+              <span class="heading-bar"></span>
+              <h1 class="heading">Choose install location</h1>
+            </div>
+            <p class="subhead">Select where SilentWatch will be installed on this PC.</p>
+
+            <label class="field-label" for="install-dir">Destination folder</label>
+            <div class="path-row">
+              <input id="install-dir" class="path-input" type="text" value="C:\Users\Public\SilentWatch" />
+              <button class="btn-secondary" onclick="sendIpc('browse')">Browse...</button>
+            </div>
+
+            <div class="space-row">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9aa4b2" stroke-width="1.8">
+                <rect x="3" y="13" width="18" height="7" rx="2"/>
+                <path d="M5 13L7.5 5H16.5L19 13"/>
+                <circle cx="17" cy="16.5" r="1" fill="#9aa4b2"/>
+              </svg>
+              <span>Required space: 48 MB</span>
+            </div>
+
+            <div class="checks">
+              <div class="check-item checked" id="chk-desktop" onclick="toggleCheck('chk-desktop')">
+                <span class="check-box">&#x2713;</span>
+                <span>Create desktop shortcut</span>
+              </div>
+              <div class="check-item checked" id="chk-launch" onclick="toggleCheck('chk-launch')">
+                <span class="check-box">&#x2713;</span>
+                <span>Launch SilentWatch after installation</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Step 3: Installing -->
+          <section class="page" id="page-3">
+            <div class="heading-row">
+              <span class="heading-bar"></span>
+              <h1 class="heading">Installing SilentWatch</h1>
+            </div>
+            <p class="subhead" id="install-subtitle">Extracting application files and configuring local storage...</p>
+
+            <div class="progress-box">
+              <div class="progress-meta">
+                <span id="progress-status">Preparing destination directory...</span>
+                <span id="progress-pct">0%</span>
+              </div>
+              <div class="progress-track">
+                <div class="progress-fill" id="progress-fill"></div>
+              </div>
+              <div class="install-log" id="install-log"></div>
+            </div>
+          </section>
+
+          <!-- Step 4: Finish -->
+          <section class="page" id="page-4">
+            <div class="heading-row">
+              <span class="heading-bar"></span>
+              <h1 class="heading">Installation complete</h1>
+            </div>
+            <p class="subhead">SilentWatch has been installed and is ready to monitor your PC.</p>
+
+            <div class="welcome-card" style="margin-top: 28px; border-color: rgba(163,230,53,0.35); background: rgba(163,230,53,0.06);">
+              <h4 style="color: #d9f99d;">Ready to launch</h4>
+              <p id="finish-path" style="margin-top: 4px; font-family: Consolas, monospace; color: #e2e8f0;"></p>
+            </div>
+          </section>
+        </div>
+
+        <footer class="footer">
+          <button class="btn-secondary" id="btn-back" style="display:none; height:40px;" onclick="prevStep()">Back</button>
+          <button class="btn-primary" id="btn-next" onclick="nextStep()">Next &#x2192;</button>
+          <button class="btn-ghost" id="btn-cancel" onclick="sendIpc('cancel')">Cancel</button>
+        </footer>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    let currentStep = 1;
+    let installedExePath = '';
+
+    function sendIpc(action, payload = {}) {
+      if (window.ipc && typeof window.ipc.postMessage === 'function') {
+        window.ipc.postMessage(JSON.stringify({ action, ...payload }));
+      }
+    }
+
+    function toggleCheck(id) {
+      document.getElementById(id).classList.toggle('checked');
+    }
+
+    function isChecked(id) {
+      return document.getElementById(id).classList.contains('checked');
+    }
+
+    function setStep(step) {
+      currentStep = step;
+      for (let i = 1; i <= 4; i++) {
+        document.getElementById('page-' + i).classList.toggle('active', i === step);
+        const st = document.getElementById('st-' + i);
+        st.classList.remove('active', 'done');
+        if (i < step) st.classList.add('done');
+        else if (i === step) st.classList.add('active');
+      }
+
+      const back = document.getElementById('btn-back');
+      const next = document.getElementById('btn-next');
+      const cancel = document.getElementById('btn-cancel');
+
+      back.style.display = step === 2 ? 'inline-flex' : 'none';
+      cancel.style.display = step < 4 ? 'inline-flex' : 'none';
+      next.disabled = step === 3;
+
+      if (step === 1) next.innerHTML = 'Next &#x2192;';
+      else if (step === 2) next.innerHTML = 'Install &#x2192;';
+      else if (step === 3) next.innerHTML = 'Installing...';
+      else if (step === 4) next.innerHTML = 'Finish &#x2192;';
+    }
+
+    function prevStep() {
+      if (currentStep === 2) setStep(1);
+    }
+
+    function nextStep() {
+      if (currentStep === 1) {
+        setStep(2);
+      } else if (currentStep === 2) {
+        setStep(3);
+        const installDir = document.getElementById('install-dir').value.trim();
+        sendIpc('install', {
+          install_dir: installDir,
+          create_desktop_shortcut: isChecked('chk-desktop'),
+          launch_after: isChecked('chk-launch'),
+          hide_to_tray: isChecked('chk-tray')
+        });
+      } else if (currentStep === 4) {
+        sendIpc('finish', {
+          launch_after: isChecked('chk-launch'),
+          exe_path: installedExePath
+        });
+      }
+    }
+
+    // Called from Rust host
+    window.__setDefaultDir = function(dir) {
+      document.getElementById('install-dir').value = dir;
+    };
+
+    window.__onInstallProgress = function(pct, msg) {
+      document.getElementById('progress-fill').style.width = pct + '%';
+      document.getElementById('progress-pct').textContent = pct + '%';
+      document.getElementById('progress-status').textContent = msg;
+      const log = document.getElementById('install-log');
+      log.innerHTML += '<div>[' + pct + '%] ' + msg + '</div>';
+      log.scrollTop = log.scrollHeight;
+    };
+
+    window.__onInstallComplete = function(exePath) {
+      installedExePath = exePath;
+      document.getElementById('finish-path').textContent = exePath;
+      setStep(4);
+    };
+
+    window.__onInstallError = function(err) {
+      document.getElementById('install-subtitle').textContent = 'Installation failed: ' + err;
+      document.getElementById('btn-next').disabled = false;
+      document.getElementById('btn-next').textContent = 'Retry';
+      currentStep = 2;
+    };
+
+    window.addEventListener('DOMContentLoaded', () => sendIpc('init'));
+  </script>
+</body>
+</html>

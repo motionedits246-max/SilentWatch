@@ -6,6 +6,7 @@ members = [
     "crates/silentwatch-storage",
     "crates/silentwatch-rules",
     "crates/silentwatch-ipc",
+    "crates/silentwatch-installer",
     "src-tauri",
 ]
 
