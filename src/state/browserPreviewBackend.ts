@@ -20,7 +20,9 @@ const STORAGE_KEY = 'silentwatch_preview_settings_v1';
 const BASE_TS = 1732611728412;
 
 const DEFAULT_SETTINGS: AppSettings = {
-  onboarding_completed: false,
+  onboarding_completed: true,
+  last_seen_version: null,
+  auto_check_updates: true,
   privilege_mode: 'standard_per_user',
   data_source_mode: 'live',
   motion_tier: 'full',
@@ -347,7 +349,7 @@ export function createBrowserPreviewBackend() {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
     } catch {
-      // ignore
+      // ignore storage errors
     }
     return { ...DEFAULT_SETTINGS };
   })();
@@ -381,6 +383,20 @@ export function createBrowserPreviewBackend() {
   };
 
   return {
+    shouldShowReleaseVideo: () => settings.last_seen_version !== '0.1.0',
+    markReleaseVideoSeen: () => {
+      persistSettings({ ...settings, last_seen_version: '0.1.0' });
+    },
+    checkForUpdates: async () => ({
+      current_version: '0.1.0',
+      latest_version: '0.1.0',
+      update_available: false,
+      release_notes: 'SilentWatch v0.1.0 — Apple Liquid Glass workspace, live CPU/RAM telemetry, Behavior Explorer & System Tray service.',
+      installer_url: null,
+      whats_new_video_url: '/videos/whats-new.mp4',
+      release_page_url: 'https://github.com/motionedits246-max/SilentWatch/releases',
+      checked_ok: true,
+    }),
     getSettings: () => ({ ...settings }),
     saveSettings: (next: AppSettings) => {
       persistSettings(next);
