@@ -16,31 +16,27 @@ describe('SilentWatch Full Application Journey', () => {
     }
   });
 
-  it('renders Mindly-inspired 5-step onboarding on first launch and transitions to Helios dark dashboard', async () => {
+  it('plays LaunchIntro, shows What\'s New showcase on first launch, opens directly to Overview, and navigates all screens cleanly', async () => {
     const user = userEvent.setup();
     render(<App />);
 
+    const introOverlay = screen.getByLabelText(/SilentWatch launch intro/i);
+    expect(introOverlay).toBeInTheDocument();
+    await user.click(introOverlay);
+
     await waitFor(() => {
-      expect(screen.getByText(/See what runs/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Open Dashboard/i })).toBeInTheDocument();
     });
-    expect(screen.getByText(/Step 1 of 5/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Open Dashboard/i }));
 
-    await user.click(screen.getByRole('button', { name: /Get Started/i }));
-    await waitFor(() => expect(screen.getByText(/Facts first/i)).toBeInTheDocument());
-
-    await user.click(screen.getByRole('button', { name: /Continue/i }));
-    await waitFor(() => expect(screen.getByText(/Choose how deeply/i)).toBeInTheDocument());
-
-    await user.click(screen.getByRole('button', { name: /Continue/i }));
-    await waitFor(() => expect(screen.getByText(/Quiet by/i)).toBeInTheDocument());
-
-    await user.click(screen.getByRole('button', { name: /Continue/i }));
-    await waitFor(() => expect(screen.getByText(/Everything is ready/i)).toBeInTheDocument());
-
-    await user.click(screen.getByRole('button', { name: /Enter SilentWatch/i }));
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Overview' })).toBeInTheDocument();
     });
+
+    expect(screen.queryByText(/Collapse rail/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Collapse sidebar/i }));
+    expect(screen.getByRole('button', { name: /Expand sidebar/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Expand sidebar/i }));
 
     await user.keyboard('{Control>}k{/Control}');
     await waitFor(() => {
@@ -59,9 +55,18 @@ describe('SilentWatch Full Application Journey', () => {
       expect(screen.getByText('DEMO FIXTURE')).toBeInTheDocument();
     });
 
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    await waitFor(() => {
+      expect(screen.getByText(/Background Monitoring Service/i)).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole('button', { name: /Updates & Release Reel/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/GitHub Releases Auto-Update/i)).toBeInTheDocument();
+    });
+
     await user.click(screen.getByRole('button', { name: /System Status/i }));
     await waitFor(() => {
-      expect(screen.getByText(/Collector Capabilities Matrix/i)).toBeInTheDocument();
+      expect(screen.getByText(/Storage & IPC/i)).toBeInTheDocument();
     });
   });
 });

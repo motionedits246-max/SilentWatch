@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { Component, useCallback, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Titlebar } from '@/components/Titlebar';
 import { Sidebar } from '@/components/Sidebar';
 import { CommandPalette } from '@/components/CommandPalette';
-import { SilentWatchMark } from '@/assets/VisualAssets';
-import { OnboardingWizard } from '@/screens/OnboardingWizard';
+import { LaunchIntro } from '@/components/LaunchIntro';
+import { ReleaseShowcaseModal } from '@/components/ReleaseShowcaseModal';
 import { OverviewScreen } from '@/screens/OverviewScreen';
 import { BehaviorExplorerScreen } from '@/screens/BehaviorExplorerScreen';
 import { ApplicationsScreen } from '@/screens/ApplicationsScreen';
@@ -12,7 +12,7 @@ import { NetworkModulesScreen } from '@/screens/NetworkModulesScreen';
 import { DetectionsLogsScreen } from '@/screens/DetectionsLogsScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
 import { SystemStatusScreen } from '@/screens/SystemStatusScreen';
-import { EASINGS, effectiveMotionTier, resolveDurationSec } from '@/animations/motionTokens';
+import { effectiveMotionTier, resolveDurationSec } from '@/animations/motionTokens';
 import { ipc } from '@/state/ipcClient';
 import type {
   AllowlistEntry,
@@ -28,10 +28,61 @@ import type {
   ScreenId,
   SystemStatusSnapshot,
   TelemetryEvent,
+  UpdateCheckResult,
 } from '@/types/telemetry';
 
+interface PanelErrorBoundaryState {
+  hasError: boolean;
+}
+
+class PanelErrorBoundary extends Component<
+  { children: React.ReactNode; onReset: () => void },
+  PanelErrorBoundaryState
+> {
+  state: PanelErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): PanelErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div
+          className="sw-card"
+          style={{
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 12,
+            padding: 24,
+          }}
+        >
+          <div style={{ fontSize: 16, fontWeight: 600, color: '#FFFFFF' }}>
+            View recovered safely
+          </div>
+          <button
+            type="button"
+            className="sw-cta-primary"
+            onClick={() => {
+              this.setState({ hasError: false });
+              this.props.onReset();
+            }}
+          >
+            Return to Overview
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export const App: React.FC = () => {
-  const [bootPhase, setBootPhase] = useState<'loading' | 'onboarding' | 'ready'>('loading');
+  const [showIntro, setShowIntro] = useState(true);
+  const [showReleaseModal, setShowReleaseModal] = useState(false);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [activeScreen, setActiveScreen] = useState<ScreenId>('overview');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -41,6 +92,9 @@ export const App: React.FC = () => {
   const [selectedProcessKey, setSelectedProcessKey] = useState<string | undefined>(undefined);
   const [coldOpenOverview, setColdOpenOverview] = useState(true);
   const [trayToast, setTrayToast] = useState(false);
+
+  const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
 
   const [overview, setOverview] = useState<OverviewSnapshot | null>(null);
   const [processes, setProcesses] = useState<ProcessSummary[]>([]);
@@ -81,6 +135,21 @@ export const App: React.FC = () => {
     [],
   );
 
+  const runUpdateCheck = useCallback(async () => {
+    setCheckingUpdates(true);
+    try {
+      const res = await ipc.checkForUpdates();
+      setUpdateInfo(res);
+      if (res.update_available) {
+        setShowReleaseModal(true);
+      }
+    } catch {
+      // Offline or rate-limited
+    } finally {
+      setCheckingUpdates(false);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -88,17 +157,30 @@ export const App: React.FC = () => {
       if (cancelled) return;
       setSettings(loaded);
       await ipc.signalUiReady();
-      if (!loaded.onboarding_completed) {
-        setBootPhase('onboarding');
-      } else {
-        await refreshData(loaded.data_source_mode, '1H');
-        if (!cancelled) setBootPhase('ready');
+      await refreshData(loaded.data_source_mode, '1H');
+
+      const shouldShowVideo = await ipc.shouldShowReleaseVideo().catch(() => false);
+      if (!cancelled && shouldShowVideo) {
+        setShowReleaseModal(true);
+      }
+      if (!cancelled && loaded.auto_check_updates) {
+        void runUpdateCheck();
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [refreshData]);
+  }, [refreshData, runUpdateCheck]);
+
+  useEffect(() => {
+    if (activeMode !== 'live') return;
+    const id = window.setInterval(() => {
+      if (!document.hidden) {
+        void refreshData('live', range, selectedProcessKey);
+      }
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [activeMode, range, selectedProcessKey, refreshData]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-motion', motionTier);
@@ -113,40 +195,18 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const onResize = () => {
-      if (window.innerWidth < 1180) setSidebarCollapsed(true);
-    };
-    onResize();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-
-  useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        if (bootPhase === 'ready') {
-          setPaletteOpen((prev) => {
-            if (!prev) setPaletteSummonCount((c) => c + 1);
-            return !prev;
-          });
-        }
+        setPaletteOpen((prev) => {
+          if (!prev) setPaletteSummonCount((c) => c + 1);
+          return !prev;
+        });
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [bootPhase]);
-
-  const handleCompleteOnboarding = async (finalSettings: AppSettings, startDemo: boolean) => {
-    const saved = await ipc.saveSettings(finalSettings);
-    setSettings(saved);
-    if (!startDemo) {
-      await ipc.startMonitoring();
-    }
-    await refreshData(saved.data_source_mode, range);
-    setColdOpenOverview(true);
-    setBootPhase('ready');
-  };
+  }, []);
 
   const handleModeChange = async (mode: DataSourceMode) => {
     if (!settings || settings.data_source_mode === mode) return;
@@ -186,44 +246,54 @@ export const App: React.FC = () => {
     });
   };
 
-  if (bootPhase === 'loading') {
-    return (
-      <div style={{ width: '100%', height: '100%', background: '#0A0A0A', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
-        <motion.div initial={{ scale: 1.15, opacity: 0.4 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.34, ease: EASINGS.signatureInOut }}>
-          <SilentWatchMark size={42} variant="dark" />
-        </motion.div>
-        <span className="mono" style={{ fontSize: 11.5, color: '#847C84' }}>
-          Connecting local telemetry engine...
-        </span>
-      </div>
-    );
-  }
-
-  if (bootPhase === 'onboarding' && settings) {
-    return <OnboardingWizard initialSettings={settings} onComplete={handleCompleteOnboarding} />;
-  }
-
   const ruleMatchCount = rules.filter((r) => r.verdict === 'matched').length;
 
   return (
     <div className={`sw-shell ${activeMode === 'demo' ? 'is-demo' : ''}`}>
+      <AnimatePresence>
+        {showIntro && <LaunchIntro onFinished={() => setShowIntro(false)} />}
+      </AnimatePresence>
+
+      {!showIntro && showReleaseModal && (
+        <ReleaseShowcaseModal
+          version={updateInfo?.current_version ?? '0.1.0'}
+          updateInfo={updateInfo}
+          onContinue={() => {
+            setShowReleaseModal(false);
+            void ipc.markReleaseVideoSeen().catch(() => undefined);
+          }}
+        />
+      )}
+
       <Titlebar
         mode={activeMode}
         privilegeMode={settings?.privilege_mode ?? 'standard_per_user'}
         monitoringActive={overview?.monitoring_active ?? false}
         motionTier={motionTier}
+        sidebarCollapsed={sidebarCollapsed}
+        updateInfo={updateInfo}
         onModeChange={handleModeChange}
+        onToggleSidebar={() => setSidebarCollapsed((c) => !c)}
         onOpenPalette={() => {
           setPaletteSummonCount((c) => c + 1);
           setPaletteOpen(true);
         }}
+        onOpenUpdateModal={() => setShowReleaseModal(true)}
         onHideToTray={() => {
           setTrayToast(true);
           setTimeout(() => setTrayToast(false), 2600);
         }}
       />
 
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12, padding: '6px 12px 12px' }}>
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          gap: 14,
+          padding: '6px 14px 14px',
+        }}
+      >
         <Sidebar
           activeScreen={activeScreen}
           collapsed={sidebarCollapsed}
@@ -233,19 +303,11 @@ export const App: React.FC = () => {
             setColdOpenOverview(false);
             setActiveScreen(scr);
           }}
-          onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
         />
 
         <main style={{ flex: 1, minWidth: 0, height: '100%', position: 'relative' }}>
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={activeScreen}
-              initial={motionTier === 'off' ? { opacity: 0 } : { opacity: 0, x: 8 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={motionTier === 'off' ? { opacity: 0 } : { opacity: 0, x: -6 }}
-              transition={{ duration: resolveDurationSec('ANIM-06', motionTier), ease: EASINGS.fluidOut }}
-              style={{ width: '100%', height: '100%' }}
-            >
+          <PanelErrorBoundary onReset={() => setActiveScreen('overview')}>
+            <div style={{ width: '100%', height: '100%' }}>
               {activeScreen === 'overview' && (
                 <OverviewScreen
                   snapshot={overview}
@@ -281,7 +343,10 @@ export const App: React.FC = () => {
               )}
 
               {activeScreen === 'applications' && (
-                <ApplicationsScreen processes={processes} onInspectProcess={handleInspectProcess} />
+                <ApplicationsScreen
+                  processes={processes}
+                  onInspectProcess={handleInspectProcess}
+                />
               )}
 
               {activeScreen === 'network_modules' && (
@@ -317,6 +382,8 @@ export const App: React.FC = () => {
                 <SettingsScreen
                   settings={settings}
                   monitoringActive={overview?.monitoring_active ?? false}
+                  updateInfo={updateInfo}
+                  checkingUpdates={checkingUpdates}
                   onSave={handleSaveSettings}
                   onClearHistory={async () => {
                     await ipc.clearLocalHistory();
@@ -333,13 +400,14 @@ export const App: React.FC = () => {
                   onQuitApp={async () => {
                     await ipc.quitApplication();
                   }}
-                  onReplayOnboarding={() => setBootPhase('onboarding')}
+                  onCheckUpdates={runUpdateCheck}
+                  onOpenWhatsNew={() => setShowReleaseModal(true)}
                 />
               )}
 
               {activeScreen === 'system_status' && <SystemStatusScreen status={sysStatus} />}
-            </motion.div>
-          </AnimatePresence>
+            </div>
+          </PanelErrorBoundary>
         </main>
       </div>
 
@@ -365,7 +433,7 @@ export const App: React.FC = () => {
           } else if (act === 'export_sanitized_markdown') {
             await handleExport('markdown');
           } else if (act === 'replay_welcome_tour') {
-            setBootPhase('onboarding');
+            setShowReleaseModal(true);
           }
         }}
       />
@@ -383,15 +451,15 @@ export const App: React.FC = () => {
               left: '50%',
               transform: 'translateX(-50%)',
               background: 'var(--sw-glass)',
-              border: '1px solid #CBA6C5',
+              border: '1px solid #E879F9',
               borderRadius: 999,
               padding: '8px 16px',
               fontSize: 12,
-              color: '#F5F3F5',
+              color: '#F8F7FA',
               zIndex: 95,
             }}
           >
-            Window hides to Windows System Tray — collectors continue running locally.
+            Window hidden to Windows System Tray — collectors continue running locally.
           </motion.div>
         )}
       </AnimatePresence>

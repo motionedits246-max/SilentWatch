@@ -1,9 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowUpRight, Play } from 'lucide-react';
-import { EmptyStateEmblem, ProcessAppIcon, SystemActivityCore } from '@/assets/VisualAssets';
+import { ArrowUpRight, Cpu, MemoryStick, Play, ShieldAlert } from 'lucide-react';
+import {
+  EmptyStateEmblem,
+  ProcessAppIcon,
+  SystemActivityCore,
+} from '@/assets/VisualAssets';
 import { ActivityTimelineChart } from '@/components/ActivityTimelineChart';
-import { EASINGS, SPRINGS } from '@/animations/motionTokens';
+import { EASINGS } from '@/animations/motionTokens';
 import type { MotionTier, OverviewSnapshot, ScreenId } from '@/types/telemetry';
 import { formatStableKey } from '@/types/telemetry';
 
@@ -18,19 +22,23 @@ interface OverviewScreenProps {
   onResumeMonitoring: () => void;
 }
 
-const MiniSparkline: React.FC<{ values: number[]; color: string }> = ({ values, color }) => {
-  const max = Math.max(...values, 1);
-  const pts = values
-    .map((v, i) => {
-      const x = (i / Math.max(values.length - 1, 1)) * 56;
-      const y = 18 - (v / max) * 15;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(' ');
+const DotMeter: React.FC<{ pct: number; activeColor: string }> = ({ pct, activeColor }) => {
+  const filled = Math.max(1, Math.min(10, Math.round(pct / 10)));
   return (
-    <svg width={56} height={20} viewBox="0 0 56 20" fill="none" aria-hidden="true">
-      <polyline points={pts} stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <div style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+      {Array.from({ length: 10 }).map((_, i) => (
+        <span
+          key={i}
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            background: i < filled ? activeColor : 'rgba(255, 255, 255, 0.1)',
+            boxShadow: i < filled ? `0 0 8px ${activeColor}80` : 'none',
+          }}
+        />
+      ))}
+    </div>
   );
 };
 
@@ -47,19 +55,34 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
   const [appFilter, setAppFilter] = useState<'active' | 'network' | 'flagged'>('active');
 
   const isDemo = snapshot?.mode === 'demo';
+  const allApps = snapshot?.high_activity_apps ?? [];
+
   const filteredApps = useMemo(() => {
-    const list = snapshot?.high_activity_apps ?? [];
     if (appFilter === 'network') {
-      return [...list].sort((a, b) => b.network_count - a.network_count).slice(0, 5);
+      return [...allApps].sort((a, b) => b.network_count - a.network_count).slice(0, 5);
     }
     if (appFilter === 'flagged') {
-      return list.filter((p) => p.signature_status === 'unsigned' || !p.publisher).slice(0, 5);
+      return allApps.filter((p) => p.signature_status === 'unsigned' || !p.publisher).slice(0, 5);
     }
-    return list.slice(0, 5);
-  }, [snapshot, appFilter]);
+    return [...allApps]
+      .sort((a, b) => b.cpu_percent + b.memory_mb / 200 - (a.cpu_percent + a.memory_mb / 200))
+      .slice(0, 5);
+  }, [allApps, appFilter]);
+
+  const totalCpu = useMemo(
+    () => Math.min(100, allApps.reduce((acc, p) => acc + p.cpu_percent, 0)),
+    [allApps],
+  );
+  const totalRamMb = useMemo(
+    () => allApps.reduce((acc, p) => acc + p.memory_mb, 0),
+    [allApps],
+  );
 
   const usedMb = Math.round((snapshot?.storage.total_bytes ?? 0) / (1024 * 1024));
-  const capMb = Math.max(Math.round((snapshot?.storage.cap_bytes ?? 512 * 1024 * 1024) / (1024 * 1024)), 1);
+  const capMb = Math.max(
+    Math.round((snapshot?.storage.cap_bytes ?? 512 * 1024 * 1024) / (1024 * 1024)),
+    1,
+  );
   const bufferPct = Math.min(100, Math.round((usedMb / capMb) * 100));
 
   const staggerProps = (index: number) =>
@@ -67,19 +90,44 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
       ? {
           initial: { opacity: 0, y: 8 },
           animate: { opacity: 1, y: 0 },
-          transition: { duration: 0.24, delay: index * 0.035, ease: EASINGS.fluidOut },
+          transition: { duration: 0.24, delay: index * 0.03, ease: EASINGS.fluidOut },
         }
       : {};
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, height: '100%', overflowY: 'auto', paddingRight: 2 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '2px 4px' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 14,
+        height: '100%',
+        overflowY: 'auto',
+        paddingRight: 2,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '2px 4px',
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-          <h1 style={{ margin: 0, fontSize: 23, fontWeight: 500, letterSpacing: '-0.02em', color: '#F5F3F5' }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: 24,
+              fontWeight: 600,
+              letterSpacing: '-0.025em',
+              color: '#FFFFFF',
+            }}
+          >
             Overview
           </h1>
-          <span className="mono" style={{ fontSize: 12, color: isDemo ? '#C4DAFF' : '#E5CBE0' }}>
-            {snapshot?.active_process_count ?? 0} Active Processes • {(snapshot?.total_events_window ?? 0).toLocaleString()} Events / {range}
+          <span className="mono" style={{ fontSize: 12, color: isDemo ? '#93C5FD' : '#E9D5FF' }}>
+            {snapshot?.active_process_count ?? 0} Running •{' '}
+            {(snapshot?.total_events_window ?? 0).toLocaleString()} Events / {range}
           </span>
         </div>
         {snapshot && !snapshot.monitoring_active && !isDemo && (
@@ -89,32 +137,79 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(230px, 0.92fr) minmax(290px, 1.25fr) minmax(250px, 1.05fr)', gap: 14 }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(245px, 0.95fr) minmax(300px, 1.3fr) minmax(260px, 1.05fr)',
+          gap: 14,
+        }}
+      >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <motion.div className="sw-card" style={{ padding: '18px 20px' }} {...staggerProps(0)}>
+          <motion.div
+            className="sw-card"
+            style={{
+              padding: '18px 20px',
+              background: isDemo
+                ? 'radial-gradient(ellipse 90% 80% at 10% 0%, rgba(96, 165, 250, 0.26) 0%, rgba(14, 13, 19, 0.88) 70%)'
+                : 'radial-gradient(ellipse 90% 80% at 10% 0%, rgba(217, 70, 239, 0.28) 0%, rgba(14, 13, 19, 0.88) 70%)',
+            }}
+            {...staggerProps(0)}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: '#A8A2A8', fontWeight: 500 }}>Active Telemetry ({range})</span>
+              <span style={{ fontSize: 12.5, color: '#D6CEDB', fontWeight: 500 }}>
+                Active Telemetry ({range})
+              </span>
               <span
                 className="mono"
                 style={{
                   fontSize: 10.5,
-                  color: isDemo ? '#89B4FA' : '#5ED18A',
-                  background: isDemo ? 'rgba(137,180,250,0.12)' : 'rgba(94,209,138,0.12)',
-                  border: `1px solid ${isDemo ? 'rgba(137,180,250,0.3)' : 'rgba(94,209,138,0.3)'}`,
+                  color: isDemo ? '#93C5FD' : '#5ED18A',
+                  background: isDemo ? 'rgba(96,165,250,0.14)' : 'rgba(94,209,138,0.14)',
+                  border: `1px solid ${isDemo ? 'rgba(96,165,250,0.34)' : 'rgba(94,209,138,0.34)'}`,
                   borderRadius: 999,
-                  padding: '1px 8px',
+                  padding: '2px 9px',
                 }}
               >
                 {isDemo ? 'DEMO' : snapshot?.monitoring_active ? 'LIVE' : 'PAUSED'}
               </span>
             </div>
+
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 10 }}>
-              <span className="tabular" style={{ fontSize: 32, fontWeight: 600, letterSpacing: '-0.025em', color: '#F5F3F5' }}>
+              <span
+                className="tabular"
+                style={{
+                  fontSize: 34,
+                  fontWeight: 600,
+                  letterSpacing: '-0.03em',
+                  color: '#FFFFFF',
+                }}
+              >
                 {(snapshot?.total_events_window ?? 0).toLocaleString()}
               </span>
-              <span className="mono" style={{ fontSize: 11.5, color: '#847C84' }}>
-                events recorded
+              <span className="mono" style={{ fontSize: 11.5, color: '#A8A0B0' }}>
+                events
               </span>
+            </div>
+
+            <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: '#C5BDCC' }}>
+                  <Cpu size={13} color="#E879F9" /> CPU
+                </span>
+                <DotMeter pct={totalCpu} activeColor="#E879F9" />
+                <span className="mono" style={{ fontSize: 11.5, color: '#FFFFFF', width: 42, textAlign: 'right' }}>
+                  {totalCpu.toFixed(1)}%
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: '#C5BDCC' }}>
+                  <MemoryStick size={13} color="#89B4FA" /> RAM
+                </span>
+                <DotMeter pct={Math.min(100, (totalRamMb / 4096) * 100)} activeColor="#89B4FA" />
+                <span className="mono" style={{ fontSize: 11.5, color: '#FFFFFF', width: 42, textAlign: 'right' }}>
+                  {totalRamMb >= 1024 ? `${(totalRamMb / 1024).toFixed(1)}G` : `${Math.round(totalRamMb)}M`}
+                </span>
+              </div>
             </div>
           </motion.div>
 
@@ -126,14 +221,15 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'space-between',
-              gap: 12,
-              background: 'radial-gradient(ellipse 80% 55% at 50% 105%, rgba(203, 166, 197, 0.16) 0%, #0A0A0A 68%)',
+              gap: 10,
             }}
             {...staggerProps(1)}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 13.5, fontWeight: 500, color: '#EAE6EA' }}>System Activity Core</span>
-              <span className="mono" style={{ fontSize: 10.5, color: '#847C84' }}>
+              <span style={{ fontSize: 13.5, fontWeight: 500, color: '#F5F3F7' }}>
+                System Activity Core
+              </span>
+              <span className="mono" style={{ fontSize: 10.5, color: '#8E8894' }}>
                 WAL {snapshot?.storage.wal_mode_active ? 'OK' : 'OFF'}
               </span>
             </div>
@@ -148,21 +244,31 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
             </div>
 
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span className="mono" style={{ fontSize: 11, color: '#847C84' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                <span className="mono" style={{ fontSize: 11, color: '#8E8894' }}>
                   Ring Buffer: {usedMb} / {capMb} MB
                 </span>
-                <span className="mono" style={{ fontSize: 11, color: '#A8A2A8' }}>
+                <span className="mono" style={{ fontSize: 11, color: '#C5BDCC' }}>
                   {bufferPct}%
                 </span>
               </div>
-              <div style={{ width: '100%', height: 4, borderRadius: 999, background: '#2A2529', overflow: 'hidden' }}>
+              <div
+                style={{
+                  width: '100%',
+                  height: 4,
+                  borderRadius: 999,
+                  background: 'rgba(255,255,255,0.08)',
+                  overflow: 'hidden',
+                }}
+              >
                 <div
                   style={{
                     width: `${bufferPct}%`,
                     height: '100%',
                     borderRadius: 999,
-                    background: bufferPct > 85 ? '#E5B567' : isDemo ? '#89B4FA' : '#CBA6C5',
+                    background: isDemo
+                      ? 'linear-gradient(90deg, #60A5FA, #38BDF8)'
+                      : 'linear-gradient(90deg, #D946EF, #A855F7)',
                     transition: 'width 260ms ease-out',
                   }}
                 />
@@ -171,9 +277,15 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
           </motion.div>
         </div>
 
-        <motion.div className="sw-card" style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12 }} {...staggerProps(2)}>
+        <motion.div
+          className="sw-card"
+          style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}
+          {...staggerProps(2)}
+        >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 500, color: '#EAE6EA' }}>High Activity Applications</h2>
+            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#F8F7FA' }}>
+              High Activity Applications
+            </h2>
             <div style={{ display: 'inline-flex', gap: 4 }}>
               {(
                 [
@@ -189,21 +301,19 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
                     type="button"
                     onClick={() => setAppFilter(key)}
                     style={{
-                      position: 'relative',
                       height: 26,
                       padding: '0 10px',
                       borderRadius: 999,
-                      border: active ? '1px solid #CBA6C5' : '1px solid #2A2529',
-                      background: active ? 'var(--sw-mauve-pill-bg)' : 'transparent',
-                      color: active ? '#F5F3F5' : '#847C84',
+                      border: active
+                        ? '1px solid rgba(232, 121, 249, 0.5)'
+                        : '1px solid rgba(255, 255, 255, 0.09)',
+                      background: active ? 'rgba(217, 70, 239, 0.2)' : 'transparent',
+                      color: active ? '#FFFFFF' : '#9E98A4',
                       fontSize: 11.5,
                       fontWeight: active ? 500 : 400,
                     }}
                   >
-                    {active && motionTier !== 'off' && (
-                      <motion.span layoutId="high-act-filter" transition={SPRINGS.pillGlide} style={{ position: 'absolute', inset: 0, borderRadius: 999, zIndex: 0 }} />
-                    )}
-                    <span style={{ position: 'relative', zIndex: 1 }}>{lbl}</span>
+                    {lbl}
                   </button>
                 );
               })}
@@ -211,12 +321,24 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
           </div>
 
           {filteredApps.length === 0 ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 16 }}>
+            <div
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                padding: 16,
+              }}
+            >
               <EmptyStateEmblem variant="paused" />
-              <div style={{ fontSize: 12.5, color: '#847C84' }}>No applications match this filter right now.</div>
+              <div style={{ fontSize: 12.5, color: '#8E8894' }}>
+                No applications match this filter right now.
+              </div>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {filteredApps.map((app) => {
                 const key = formatStableKey(app.instance_id);
                 const unsigned = app.signature_status === 'unsigned';
@@ -226,47 +348,69 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
                     type="button"
                     onClick={() => onInspectProcess(key)}
                     style={{
-                      height: 52,
-                      padding: '0 10px',
-                      borderRadius: 10,
-                      border: '1px solid transparent',
-                      background: 'transparent',
+                      height: 54,
+                      padding: '0 12px',
+                      borderRadius: 14,
+                      border: '1px solid rgba(255, 255, 255, 0.05)',
+                      background: 'rgba(255, 255, 255, 0.025)',
                       display: 'grid',
-                      gridTemplateColumns: '1fr auto auto',
+                      gridTemplateColumns: '1fr auto',
                       alignItems: 'center',
                       gap: 12,
                       textAlign: 'left',
-                      transition: 'background-color 110ms ease, border-color 110ms ease',
+                      transition: 'background 140ms ease, border-color 140ms ease',
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#141115';
-                      e.currentTarget.style.borderColor = '#2A2529';
+                      e.currentTarget.style.background = 'rgba(217, 70, 239, 0.1)';
+                      e.currentTarget.style.borderColor = 'rgba(232, 121, 249, 0.32)';
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.borderColor = 'transparent';
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.025)';
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.05)';
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                      <ProcessAppIcon exeName={app.exe_name} iconDataUrl={app.icon_data_url} size={28} />
+                      <ProcessAppIcon
+                        exeName={app.exe_name}
+                        iconDataUrl={app.icon_data_url}
+                        size={30}
+                      />
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: '#F5F3F5', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 500,
+                            color: '#F8F7FA',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
                           {app.exe_name}
                         </div>
-                        <div className="mono" style={{ fontSize: 11, color: unsigned ? '#E5B567' : '#847C84' }}>
-                          {unsigned ? 'Unsigned' : app.publisher ?? 'Verified'} • PID {app.instance_id.pid}
+                        <div
+                          className="mono"
+                          style={{ fontSize: 11, color: unsigned ? '#E5B567' : '#8E8894' }}
+                        >
+                          {unsigned ? 'Unsigned' : app.publisher ?? 'Verified'} • PID{' '}
+                          {app.instance_id.pid}
                         </div>
                       </div>
                     </div>
 
-                    <MiniSparkline values={app.sparkline} color={unsigned ? '#E5B567' : '#CBA6C5'} />
-
                     <div style={{ textAlign: 'right' }}>
-                      <div className="mono" style={{ fontSize: 12.5, fontWeight: 600, color: unsigned ? '#E5B567' : '#5ED18A' }}>
-                        +{app.activity_delta_pct.toFixed(1)}%
+                      <div
+                        className="mono"
+                        style={{
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          color: unsigned ? '#E5B567' : '#F0ABFC',
+                        }}
+                      >
+                        {app.cpu_percent.toFixed(1)}% CPU
                       </div>
-                      <div className="mono" style={{ fontSize: 10.5, color: '#847C84' }}>
-                        {app.event_count} ev
+                      <div className="mono" style={{ fontSize: 10.5, color: '#9E98A4' }}>
+                        {Math.round(app.memory_mb)} MB RAM
                       </div>
                     </div>
                   </button>
@@ -276,13 +420,30 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
           )}
         </motion.div>
 
-        <motion.div className="sw-card" style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12 }} {...staggerProps(3)}>
+        <motion.div
+          className="sw-card"
+          style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}
+          {...staggerProps(3)}
+        >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 500, color: '#EAE6EA' }}>Live Telemetry Breakdown</h2>
+            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#F8F7FA' }}>
+              Live Telemetry Breakdown
+            </h2>
             <button
               type="button"
               onClick={() => onNavigate('applications')}
-              style={{ height: 26, padding: '0 10px', borderRadius: 999, border: '1px solid #2A2529', background: '#100E10', color: '#A8A2A8', fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              style={{
+                height: 26,
+                padding: '0 10px',
+                borderRadius: 999,
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: 'rgba(255, 255, 255, 0.04)',
+                color: '#C5BDCC',
+                fontSize: 11.5,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
             >
               See all <ArrowUpRight size={12} />
             </button>
@@ -290,20 +451,57 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, flex: 1 }}>
             {[
-              { label: 'Process Spawns', value: snapshot?.process_spawns_count ?? 0, color: '#5ED18A', target: 'applications' as ScreenId },
-              { label: 'Network Calls', value: snapshot?.network_calls_count ?? 0, color: '#89B4FA', target: 'network_modules' as ScreenId },
-              { label: 'DLL Loads', value: snapshot?.dll_loads_count ?? 0, color: '#CBA6C5', target: 'network_modules' as ScreenId },
-              { label: 'Rule Matches', value: snapshot?.rule_matches_count ?? 0, color: (snapshot?.rule_matches_count ?? 0) > 0 ? '#E06C75' : '#A8A2A8', target: 'detections_logs' as ScreenId },
+              {
+                label: 'Process Spawns',
+                value: snapshot?.process_spawns_count ?? 0,
+                color: '#5ED18A',
+                target: 'applications' as ScreenId,
+              },
+              {
+                label: 'Network Calls',
+                value: snapshot?.network_calls_count ?? 0,
+                color: '#60A5FA',
+                target: 'network_modules' as ScreenId,
+              },
+              {
+                label: 'DLL Loads',
+                value: snapshot?.dll_loads_count ?? 0,
+                color: '#E879F9',
+                target: 'network_modules' as ScreenId,
+              },
+              {
+                label: 'Rule Matches',
+                value: snapshot?.rule_matches_count ?? 0,
+                color: (snapshot?.rule_matches_count ?? 0) > 0 ? '#FB7185' : '#A8A2B0',
+                target: 'detections_logs' as ScreenId,
+              },
             ].map((tile) => (
               <button
                 key={tile.label}
                 type="button"
                 className="sw-tile"
                 onClick={() => onNavigate(tile.target)}
-                style={{ padding: '14px', textAlign: 'left', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}
+                style={{
+                  padding: '14px 15px',
+                  textAlign: 'left',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                }}
               >
-                <span style={{ fontSize: 12, color: '#A8A2A8' }}>{tile.label}</span>
-                <span className="tabular" style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.02em', color: tile.color }}>
+                <span style={{ fontSize: 12, color: '#A8A0B0', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  {tile.label === 'Rule Matches' && <ShieldAlert size={12} color={tile.color} />}
+                  {tile.label}
+                </span>
+                <span
+                  className="tabular"
+                  style={{
+                    fontSize: 28,
+                    fontWeight: 600,
+                    letterSpacing: '-0.025em',
+                    color: tile.color,
+                  }}
+                >
                   {tile.value.toLocaleString()}
                 </span>
               </button>

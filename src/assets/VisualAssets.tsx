@@ -6,20 +6,34 @@ export const SilentWatchMark: React.FC<{
   variant?: 'dark' | 'light';
   className?: string;
 }> = ({ size = 22, variant = 'dark', className = '' }) => {
-  const topColor = variant === 'dark' ? '#FDCEF1' : '#181818';
-  const leftColor = variant === 'dark' ? '#CBA6C5' : '#404040';
-  const rightColor = variant === 'dark' ? '#F5F3F5' : '#181818';
-  const ringColor = variant === 'dark' ? 'rgba(203,166,197,0.34)' : 'rgba(24,24,24,0.18)';
-  const lineColor = variant === 'dark' ? 'rgba(203,166,197,0.45)' : 'rgba(24,24,24,0.28)';
+  const topColor = variant === 'dark' ? '#F5D0FE' : '#181818';
+  const leftColor = variant === 'dark' ? '#D946EF' : '#404040';
+  const rightColor = variant === 'dark' ? '#F8F7FA' : '#181818';
+  const ringColor = variant === 'dark' ? 'rgba(232,121,249,0.38)' : 'rgba(24,24,24,0.18)';
+  const lineColor = variant === 'dark' ? 'rgba(232,121,249,0.48)' : 'rgba(24,24,24,0.28)';
 
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" className={className} aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      fill="none"
+      className={className}
+      aria-hidden="true"
+    >
       <circle cx="16" cy="16" r="13.5" stroke={ringColor} strokeWidth="1.25" />
       <path d="M16 7.5L23.36 20.25H8.64L16 7.5Z" stroke={lineColor} strokeWidth="1.15" />
       <circle cx="16" cy="7.5" r="3.1" fill={topColor} />
       <circle cx="23.36" cy="20.25" r="3.1" fill={rightColor} />
       <circle cx="8.64" cy="20.25" r="3.1" fill={leftColor} />
-      <circle cx="16" cy="16" r="1.6" fill={variant === 'dark' ? '#0A0A0A' : '#FBFAF6'} stroke={leftColor} strokeWidth="1.1" />
+      <circle
+        cx="16"
+        cy="16"
+        r="1.6"
+        fill={variant === 'dark' ? '#0A0A0A' : '#FBFAF6'}
+        stroke={leftColor}
+        strokeWidth="1.1"
+      />
     </svg>
   );
 };
@@ -29,13 +43,23 @@ export const OpticalLensCenterpiece: React.FC<{
   motionTier: MotionTier;
 }> = ({ size = 216, motionTier }) => {
   return (
-    <div style={{ width: size, height: size, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div
+      style={{
+        width: size,
+        height: size,
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
       <div
         style={{
           position: 'absolute',
           inset: '8% -12% -16% 12%',
           borderRadius: '50%',
-          background: 'radial-gradient(ellipse at 42% 45%, rgba(24, 22, 20, 0.24) 0%, rgba(24, 22, 20, 0.11) 42%, transparent 72%)',
+          background:
+            'radial-gradient(ellipse at 42% 45%, rgba(24, 22, 20, 0.24) 0%, rgba(24, 22, 20, 0.11) 42%, transparent 72%)',
           filter: 'blur(18px)',
           pointerEvents: 'none',
         }}
@@ -69,42 +93,12 @@ export const OpticalLensCenterpiece: React.FC<{
             <stop offset="82%" stopColor="#09080B" />
             <stop offset="100%" stopColor="#040406" />
           </radialGradient>
-          <linearGradient id="swGlassSpec" x1="20%" y1="14%" x2="65%" y2="62%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.42)" />
-            <stop offset="45%" stopColor="rgba(253,206,241,0.12)" />
-            <stop offset="100%" stopColor="rgba(255,255,255,0)" />
-          </linearGradient>
-          <radialGradient id="swCoatingGlint" cx="68%" cy="70%" r="40%">
-            <stop offset="0%" stopColor="rgba(203,166,197,0.36)" />
-            <stop offset="55%" stopColor="rgba(137,180,250,0.12)" />
-            <stop offset="100%" stopColor="transparent" />
-          </radialGradient>
         </defs>
         <circle cx="120" cy="120" r="108" fill="url(#swLensHousing)" stroke="rgba(255,255,255,0.18)" strokeWidth="1.2" />
         <circle cx="120" cy="120" r="97" fill="none" stroke="url(#swPrismRim)" strokeWidth="3.2" />
-        <circle cx="120" cy="120" r="90" fill="none" stroke="rgba(255,255,255,0.09)" strokeWidth="1" />
-        <circle cx="120" cy="120" r="84" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="0.9" />
-        <circle cx="120" cy="120" r="78" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
         <circle cx="120" cy="120" r="72" fill="#0B0A0D" stroke="rgba(255,255,255,0.14)" strokeWidth="1.2" />
         <circle cx="120" cy="120" r="64" fill="url(#swSmokedGlass)" stroke="rgba(203,166,197,0.22)" strokeWidth="1" />
-        <g opacity="0.86">
-          {[0, 60, 120, 180, 240, 300].map((deg) => (
-            <path
-              key={deg}
-              d="M120 62 C142 74, 152 94, 134 114 L109 102 C104 86, 108 72, 120 62 Z"
-              fill="#151418"
-              stroke="rgba(255,255,255,0.08)"
-              strokeWidth="0.8"
-              transform={`rotate(${deg} 120 120)`}
-            />
-          ))}
-        </g>
         <circle cx="120" cy="120" r="24" fill="#050407" stroke="rgba(255,255,255,0.12)" strokeWidth="0.9" />
-        <circle cx="120" cy="120" r="14" fill="#020203" />
-        <circle cx="120" cy="120" r="62" fill="url(#swCoatingGlint)" />
-        <path d="M72 95 C80 68, 108 56, 138 62 C112 68, 90 86, 82 112 C76 108, 73 102, 72 95 Z" fill="url(#swGlassSpec)" />
-        <ellipse cx="101" cy="98" rx="6.5" ry="3.2" transform="rotate(-32 101 98)" fill="rgba(255,255,255,0.52)" />
-        <circle cx="143" cy="144" r="2.6" fill="rgba(253,206,241,0.45)" />
       </svg>
     </div>
   );
@@ -116,55 +110,120 @@ export const SystemActivityCore: React.FC<{
   motionTier: MotionTier;
   eventsPerMin: number;
 }> = ({ active, isDemo, motionTier, eventsPerMin }) => {
-  const accent = isDemo ? '#89B4FA' : '#CBA6C5';
-  const luminous = isDemo ? '#C4DAFF' : '#FDCEF1';
-  const breathe = active && motionTier === 'full';
+  const primary = isDemo ? '#60A5FA' : '#E879F9';
+  const secondary = isDemo ? '#38BDF8' : '#A855F7';
+  const animate = active && motionTier !== 'off';
 
   return (
-    <div style={{ position: 'relative', width: 96, height: 96, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <svg width={96} height={96} viewBox="0 0 96 96" fill="none" aria-label="System Activity Core">
-        <defs>
-          <radialGradient id="swCoreHalo" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor={luminous} stopOpacity={active ? '0.45' : '0.12'} />
-            <stop offset="55%" stopColor={accent} stopOpacity={active ? '0.18' : '0.05'} />
-            <stop offset="100%" stopColor="transparent" />
-          </radialGradient>
-          <linearGradient id="swGrooveRim" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.22)" />
-            <stop offset="50%" stopColor={accent} stopOpacity="0.45" />
-            <stop offset="100%" stopColor="rgba(255,255,255,0.06)" />
-          </linearGradient>
-        </defs>
-        <circle cx="48" cy="48" r="42" fill="#0D0B0E" stroke="#2A2529" strokeWidth="1.2" />
-        <circle cx="48" cy="48" r="37" fill="#070608" stroke="url(#swGrooveRim)" strokeWidth="1.4" />
-        <circle cx="48" cy="48" r="30" fill="url(#swCoreHalo)" className={breathe ? 'sw-core-breathe' : ''} />
-        <circle
-          cx="48"
-          cy="48"
-          r="17"
-          fill={active ? accent : '#3A353A'}
-          fillOpacity={active ? 0.88 : 0.45}
-          stroke={luminous}
-          strokeOpacity={active ? 0.55 : 0.15}
-          strokeWidth="1.2"
-          className={breathe ? 'sw-core-breathe' : ''}
-        />
-        <circle cx="44" cy="43" r="4" fill="#FFFFFF" fillOpacity={active ? 0.35 : 0.1} />
-      </svg>
+    <div
+      style={{
+        position: 'relative',
+        width: 118,
+        height: 118,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+      aria-label="System Activity Core"
+    >
       <div
-        className="mono"
+        className={animate ? 'sw-core-breathe' : ''}
         style={{
           position: 'absolute',
-          bottom: -2,
-          fontSize: 10,
-          color: 'var(--sw-text-muted)',
-          background: '#0A0A0A',
-          padding: '1px 6px',
-          borderRadius: 999,
-          border: '1px solid #2A2529',
+          inset: 6,
+          borderRadius: '50%',
+          background: active
+            ? `radial-gradient(circle, ${primary}48 0%, ${secondary}20 48%, transparent 72%)`
+            : 'radial-gradient(circle, rgba(140,132,148,0.14) 0%, transparent 70%)',
+          filter: 'blur(10px)',
+          pointerEvents: 'none',
+        }}
+      />
+
+      <div
+        className={animate ? 'sw-orbit-spin' : ''}
+        style={{
+          position: 'absolute',
+          inset: 8,
+          borderRadius: '50%',
+          padding: 2,
+          background: active
+            ? `conic-gradient(from 0deg, transparent 0deg, ${primary} 90deg, #FFFFFF 135deg, ${secondary} 195deg, transparent 295deg)`
+            : 'conic-gradient(from 0deg, rgba(255,255,255,0.08), rgba(255,255,255,0.16), rgba(255,255,255,0.06))',
+          WebkitMask:
+            'radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px))',
+          mask: 'radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px))',
+          opacity: active ? 0.96 : 0.45,
+        }}
+      />
+
+      <svg
+        width={118}
+        height={118}
+        viewBox="0 0 118 118"
+        fill="none"
+        className={animate ? 'sw-orbit-spin-reverse' : ''}
+        style={{ position: 'absolute', inset: 0 }}
+        aria-hidden="true"
+      >
+        <circle
+          cx="59"
+          cy="59"
+          r="43"
+          stroke={active ? `${primary}55` : 'rgba(255,255,255,0.08)'}
+          strokeWidth="1"
+          strokeDasharray="18 12 4 12"
+        />
+        <circle
+          cx="59"
+          cy="16"
+          r="2.4"
+          fill={active ? '#FFFFFF' : '#6A6470'}
+          style={{ filter: active ? `drop-shadow(0 0 6px ${primary})` : undefined }}
+        />
+      </svg>
+
+      <div
+        style={{
+          position: 'relative',
+          width: 64,
+          height: 64,
+          borderRadius: '50%',
+          background: active
+            ? `radial-gradient(circle at 32% 28%, rgba(255,255,255,0.34) 0%, ${primary}66 24%, #1A1324 68%, #07050B 100%)`
+            : 'radial-gradient(circle at 32% 28%, rgba(255,255,255,0.14) 0%, #1B1820 55%, #09080C 100%)',
+          border: `1px solid ${active ? 'rgba(255,255,255,0.32)' : 'rgba(255,255,255,0.1)'}`,
+          boxShadow: active
+            ? `0 0 26px ${primary}44, inset 0 2px 6px rgba(255,255,255,0.28)`
+            : 'inset 0 1px 4px rgba(255,255,255,0.1)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
         }}
       >
-        {active ? `${eventsPerMin}/m` : 'PAUSED'}
+        <span
+          className="mono"
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: active ? '#FFFFFF' : '#8E8894',
+            lineHeight: 1,
+          }}
+        >
+          {active ? eventsPerMin : '—'}
+        </span>
+        <span
+          className="mono"
+          style={{
+            fontSize: 8.5,
+            letterSpacing: '0.06em',
+            color: active ? 'rgba(255,255,255,0.72)' : '#6E6874',
+            marginTop: 3,
+          }}
+        >
+          {active ? 'EV/MIN' : 'PAUSED'}
+        </span>
       </div>
     </div>
   );
@@ -188,11 +247,11 @@ export const ExportFolderIllustration: React.FC<{ size?: number; tucked?: boolea
       height="18"
       rx="3"
       fill="#261F26"
-      stroke="#CBA6C5"
+      stroke="#E879F9"
       strokeWidth="1"
       style={{ transition: 'all 200ms cubic-bezier(0.16, 1, 0.3, 1)' }}
     />
-    <line x1="15" y1={tucked ? 19 : 14} x2="31" y2={tucked ? 19 : 14} stroke="#FDCEF1" strokeWidth="1.2" strokeLinecap="round" />
+    <line x1="15" y1={tucked ? 19 : 14} x2="31" y2={tucked ? 19 : 14} stroke="#F5D0FE" strokeWidth="1.2" strokeLinecap="round" />
     <line x1="15" y1={tucked ? 23 : 18} x2="26" y2={tucked ? 23 : 18} stroke="#847C84" strokeWidth="1.2" strokeLinecap="round" />
     <path
       d="M4 18C4 16.3 5.3 15 7 15H41C42.7 15 44 16.3 44 18V34C44 36.2 42.2 38 40 38H8C5.8 38 4 36.2 4 34V18Z"
@@ -211,14 +270,14 @@ export const EmptyStateEmblem: React.FC<{ variant: 'paused' | 'search' | 'rules'
     {variant === 'paused' && (
       <>
         <circle cx="60" cy="48" r="18" stroke="#524852" strokeWidth="1.4" />
-        <line x1="55" y1="41" x2="55" y2="55" stroke="#CBA6C5" strokeWidth="2.2" strokeLinecap="round" />
-        <line x1="65" y1="41" x2="65" y2="55" stroke="#CBA6C5" strokeWidth="2.2" strokeLinecap="round" />
+        <line x1="55" y1="41" x2="55" y2="55" stroke="#E879F9" strokeWidth="2.2" strokeLinecap="round" />
+        <line x1="65" y1="41" x2="65" y2="55" stroke="#E879F9" strokeWidth="2.2" strokeLinecap="round" />
       </>
     )}
     {variant === 'search' && (
       <>
         <circle cx="56" cy="45" r="14" stroke="#524852" strokeWidth="1.5" />
-        <line x1="66" y1="55" x2="76" y2="65" stroke="#CBA6C5" strokeWidth="2" strokeLinecap="round" />
+        <line x1="66" y1="55" x2="76" y2="65" stroke="#E879F9" strokeWidth="2" strokeLinecap="round" />
       </>
     )}
     {variant === 'rules' && (
@@ -244,12 +303,18 @@ export const ProcessAppIcon: React.FC<{ exeName: string; iconDataUrl?: string | 
 }) => {
   if (iconDataUrl) {
     return (
-      <img src={iconDataUrl} alt={exeName} width={size} height={size} style={{ borderRadius: 7, objectFit: 'contain' }} />
+      <img
+        src={iconDataUrl}
+        alt={exeName}
+        width={size}
+        height={size}
+        style={{ borderRadius: 8, objectFit: 'contain' }}
+      />
     );
   }
   const low = exeName.toLowerCase();
-  let bg = '#18141A';
-  let accent = '#CBA6C5';
+  let bg = '#18141C';
+  let accent = '#E879F9';
   let glyph = exeName.slice(0, 2).toUpperCase();
 
   if (low.includes('chrome')) {
@@ -265,7 +330,7 @@ export const ProcessAppIcon: React.FC<{ exeName: string; iconDataUrl?: string | 
     accent = '#93C5FD';
     glyph = '>_';
   } else if (low.includes('svchost')) {
-    bg = '#16161A';
+    bg = '#16161C';
     accent = '#A8A2A8';
     glyph = 'OS';
   } else if (low.includes('update') || low.includes('helper')) {
@@ -284,9 +349,9 @@ export const ProcessAppIcon: React.FC<{ exeName: string; iconDataUrl?: string | 
       style={{
         width: size,
         height: size,
-        borderRadius: 7,
+        borderRadius: 8,
         background: bg,
-        border: `1px solid ${accent}38`,
+        border: `1px solid ${accent}40`,
         color: accent,
         display: 'inline-flex',
         alignItems: 'center',
