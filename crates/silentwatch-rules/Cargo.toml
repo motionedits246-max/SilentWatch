@@ -1,0 +1,11 @@
+[package]
+name = "silentwatch-rules"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+silentwatch-core = { path = "../silentwatch-core" }
+serde.workspace = true
+chrono.workspace = true
+uuid.workspace = true
