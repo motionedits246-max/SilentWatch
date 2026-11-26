@@ -1,4 +1,4 @@
-import React, { Component, useCallback, useEffect, useState } from 'react';
+import React, { Component, useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Titlebar } from '@/components/Titlebar';
 import { Sidebar } from '@/components/Sidebar';
@@ -95,6 +95,7 @@ export const App: React.FC = () => {
 
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const pollingInFlight = useRef(false);
 
   const [overview, setOverview] = useState<OverviewSnapshot | null>(null);
   const [processes, setProcesses] = useState<ProcessSummary[]>([]);
@@ -172,15 +173,38 @@ export const App: React.FC = () => {
     };
   }, [refreshData, runUpdateCheck]);
 
+  // Lightweight screen-scoped 5s polling (paused during intro/modal, guarded against overlap)
   useEffect(() => {
-    if (activeMode !== 'live') return;
-    const id = window.setInterval(() => {
-      if (!document.hidden) {
-        void refreshData('live', range, selectedProcessKey);
+    if (activeMode !== 'live' || showIntro || showReleaseModal) return;
+    const id = window.setInterval(async () => {
+      if (document.hidden || pollingInFlight.current) return;
+      pollingInFlight.current = true;
+      try {
+        if (activeScreen === 'overview') {
+          const ov = await ipc.getOverview(range, 'live');
+          setOverview(ov);
+        } else if (activeScreen === 'applications') {
+          const procs = await ipc.getProcesses('live');
+          setProcesses(procs);
+        } else if (activeScreen === 'network_modules') {
+          const [conns, mods] = await Promise.all([
+            ipc.getNetworkConnections('live'),
+            ipc.getModules('live', selectedProcessKey),
+          ]);
+          setConnections(conns);
+          setModules(mods);
+        } else if (activeScreen === 'system_status') {
+          const st = await ipc.getSystemStatus('live');
+          setSysStatus(st);
+        }
+      } catch {
+        // Ignore transient poll errors
+      } finally {
+        pollingInFlight.current = false;
       }
-    }, 3000);
+    }, 5000);
     return () => window.clearInterval(id);
-  }, [activeMode, range, selectedProcessKey, refreshData]);
+  }, [activeMode, activeScreen, range, selectedProcessKey, showIntro, showReleaseModal]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-motion', motionTier);

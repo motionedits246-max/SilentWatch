@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { motion } from 'motion/react';
 import { ArrowRight, Download, RefreshCw, Sparkles, X } from 'lucide-react';
+import { CustomVideoPlayer } from '@/components/CustomVideoPlayer';
 import type { UpdateCheckResult } from '@/types/telemetry';
 
 interface ReleaseShowcaseModalProps {
@@ -18,10 +19,8 @@ export const ReleaseShowcaseModal: React.FC<ReleaseShowcaseModalProps> = ({
   onCheckUpdates,
   onContinue,
 }) => {
-  const [fallbackLocal, setFallbackLocal] = useState(false);
   const isUpdate = Boolean(updateInfo?.update_available);
-  const videoSrc =
-    (!fallbackLocal && isUpdate && updateInfo?.whats_new_video_url) || '/videos/whats-new.mp4';
+  const remoteVideoSrc = isUpdate ? updateInfo?.whats_new_video_url ?? null : null;
   const downloadHref = updateInfo?.installer_url ?? updateInfo?.release_page_url;
 
   return (
@@ -30,9 +29,9 @@ export const ReleaseShowcaseModal: React.FC<ReleaseShowcaseModalProps> = ({
         position: 'fixed',
         inset: 0,
         zIndex: 150,
-        background: 'rgba(4, 3, 7, 0.84)',
-        backdropFilter: 'blur(26px)',
-        WebkitBackdropFilter: 'blur(26px)',
+        background: 'rgba(5, 4, 9, 0.86)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -40,18 +39,18 @@ export const ReleaseShowcaseModal: React.FC<ReleaseShowcaseModalProps> = ({
       }}
     >
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 12 }}
+        initial={{ opacity: 0, scale: 0.96, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
         style={{
           width: 780,
           maxWidth: '94vw',
           borderRadius: 24,
           background:
-            'linear-gradient(180deg, rgba(28, 22, 36, 0.96) 0%, rgba(12, 11, 16, 0.98) 100%)',
+            'linear-gradient(180deg, rgba(26, 21, 34, 0.98) 0%, rgba(12, 11, 16, 0.99) 100%)',
           border: '1px solid rgba(255, 255, 255, 0.14)',
           boxShadow:
-            '0 32px 96px rgba(0, 0, 0, 0.78), inset 0 1px 0 rgba(255, 255, 255, 0.18)',
+            '0 28px 80px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(255, 255, 255, 0.16)',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
@@ -59,7 +58,7 @@ export const ReleaseShowcaseModal: React.FC<ReleaseShowcaseModalProps> = ({
       >
         <div
           style={{
-            padding: '15px 22px',
+            padding: '14px 20px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -115,40 +114,14 @@ export const ReleaseShowcaseModal: React.FC<ReleaseShowcaseModalProps> = ({
           </div>
         </div>
 
-        <div
-          style={{
-            position: 'relative',
-            background: '#18181B',
-            aspectRatio: '16 / 9',
-            width: '100%',
-            overflow: 'hidden',
-          }}
-        >
-          <video
-            key={videoSrc}
-            src={videoSrc}
-            autoPlay
-            loop
-            muted
-            playsInline
-            controls
-            onError={() => {
-              if (!fallbackLocal && isUpdate && updateInfo?.whats_new_video_url) {
-                setFallbackLocal(true);
-              }
-            }}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              display: 'block',
-            }}
-          />
-        </div>
+        <CustomVideoPlayer
+          src={remoteVideoSrc}
+          version={isUpdate ? updateInfo?.latest_version ?? version : version}
+        />
 
         <div
           style={{
-            padding: '16px 22px',
+            padding: '15px 20px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -156,10 +129,27 @@ export const ReleaseShowcaseModal: React.FC<ReleaseShowcaseModalProps> = ({
           }}
         >
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#E879F9', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: '#E879F9',
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                marginBottom: 4,
+              }}
+            >
               {isUpdate ? `What's New in v${updateInfo?.latest_version}` : 'Release Highlights'}
             </div>
-            <div style={{ fontSize: 12.5, color: '#C5BDCC', lineHeight: 1.45, maxHeight: 58, overflowY: 'auto' }}>
+            <div
+              style={{
+                fontSize: 12.5,
+                color: '#C5BDCC',
+                lineHeight: 1.45,
+                maxHeight: 58,
+                overflowY: 'auto',
+              }}
+            >
               {updateInfo?.release_notes ||
                 'Live CPU/RAM counters, true local-time timelines, Apple Liquid Glass workspace, background System Tray service, and GitHub auto-updates.'}
             </div>

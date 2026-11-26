@@ -136,80 +136,85 @@ fn mark_release_video_seen(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn check_for_updates() -> Result<UpdateCheckResult, String> {
-    let current = env!("CARGO_PKG_VERSION").to_string();
-    let repo_releases = "https://github.com/motionedits246-max/SilentWatch/releases".to_string();
+async fn check_for_updates() -> Result<UpdateCheckResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let current = env!("CARGO_PKG_VERSION").to_string();
+        let repo_releases =
+            "https://github.com/motionedits246-max/SilentWatch/releases".to_string();
 
-    let resp =
-        ureq::get("https://api.github.com/repos/motionedits246-max/SilentWatch/releases/latest")
-            .set("User-Agent", "SilentWatch-Desktop-Updater/0.1.0")
-            .set("Accept", "application/vnd.github+json")
-            .timeout(Duration::from_secs(6))
-            .call();
+        let resp =
+            ureq::get("https://api.github.com/repos/motionedits246-max/SilentWatch/releases/latest")
+                .set("User-Agent", "SilentWatch-Desktop-Updater/0.1.0")
+                .set("Accept", "application/vnd.github+json")
+                .timeout(Duration::from_secs(4))
+                .call();
 
-    match resp {
-        Ok(r) => {
-            let json: serde_json::Value = r.into_json().map_err(|e| e.to_string())?;
-            let tag = json["tag_name"]
-                .as_str()
-                .unwrap_or(&current)
-                .trim_start_matches('v')
-                .to_string();
-            let notes = json["body"]
-                .as_str()
-                .unwrap_or("Performance improvements and telemetry updates.")
-                .to_string();
-            let html_url = json["html_url"]
-                .as_str()
-                .unwrap_or(&repo_releases)
-                .to_string();
+        match resp {
+            Ok(r) => {
+                let json: serde_json::Value = r.into_json().map_err(|e| e.to_string())?;
+                let tag = json["tag_name"]
+                    .as_str()
+                    .unwrap_or(&current)
+                    .trim_start_matches('v')
+                    .to_string();
+                let notes = json["body"]
+                    .as_str()
+                    .unwrap_or("Performance improvements and telemetry updates.")
+                    .to_string();
+                let html_url = json["html_url"]
+                    .as_str()
+                    .unwrap_or(&repo_releases)
+                    .to_string();
 
-            let mut installer_url = None;
-            let mut video_url = None;
-            let mut startup_video_url = None;
-            if let Some(assets) = json["assets"].as_array() {
-                for a in assets {
-                    let name = a["name"].as_str().unwrap_or("").to_lowercase();
-                    let dl = a["browser_download_url"].as_str().map(|s| s.to_string());
-                    if name.ends_with(".exe") && installer_url.is_none() {
-                        installer_url = dl;
-                    } else if name.ends_with(".mp4") {
-                        if (name.contains("startup") || name.contains("intro"))
-                            && startup_video_url.is_none()
-                        {
-                            startup_video_url = dl;
-                        } else if video_url.is_none() {
-                            video_url = dl;
+                let mut installer_url = None;
+                let mut video_url = None;
+                let mut startup_video_url = None;
+                if let Some(assets) = json["assets"].as_array() {
+                    for a in assets {
+                        let name = a["name"].as_str().unwrap_or("").to_lowercase();
+                        let dl = a["browser_download_url"].as_str().map(|s| s.to_string());
+                        if name.ends_with(".exe") && installer_url.is_none() {
+                            installer_url = dl;
+                        } else if name.ends_with(".mp4") {
+                            if (name.contains("startup") || name.contains("intro"))
+                                && startup_video_url.is_none()
+                            {
+                                startup_video_url = dl;
+                            } else if video_url.is_none() {
+                                video_url = dl;
+                            }
                         }
                     }
                 }
-            }
 
-            let update_available = tag != current && !tag.is_empty();
-            Ok(UpdateCheckResult {
-                current_version: current,
-                latest_version: tag,
-                update_available,
-                release_notes: notes,
-                installer_url,
-                whats_new_video_url: video_url,
-                startup_video_url,
-                release_page_url: html_url,
-                checked_ok: true,
-            })
+                let update_available = tag != current && !tag.is_empty();
+                Ok(UpdateCheckResult {
+                    current_version: current,
+                    latest_version: tag,
+                    update_available,
+                    release_notes: notes,
+                    installer_url,
+                    whats_new_video_url: video_url,
+                    startup_video_url,
+                    release_page_url: html_url,
+                    checked_ok: true,
+                })
+            }
+            Err(_) => Ok(UpdateCheckResult {
+                current_version: current.clone(),
+                latest_version: current,
+                update_available: false,
+                release_notes: "You are running the latest installed version (offline or no published GitHub release yet).".into(),
+                installer_url: None,
+                whats_new_video_url: None,
+                startup_video_url: None,
+                release_page_url: repo_releases,
+                checked_ok: false,
+            }),
         }
-        Err(_) => Ok(UpdateCheckResult {
-            current_version: current.clone(),
-            latest_version: current,
-            update_available: false,
-            release_notes: "You are running the latest installed version (offline or no published GitHub release yet).".into(),
-            installer_url: None,
-            whats_new_video_url: None,
-            startup_video_url: None,
-            release_page_url: repo_releases,
-            checked_ok: false,
-        }),
-    }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -238,18 +243,24 @@ fn save_settings(state: State<'_, AppState>, settings: AppSettings) -> Result<Ap
 }
 
 #[tauri::command]
-fn start_monitoring(state: State<'_, AppState>) -> Result<bool, String> {
-    state.collector.start();
-    let cycle = state.collector.collect_once();
-    let _ = state.storage.upsert_processes(&cycle.processes);
-    let _ = state.storage.upsert_network_connections(&cycle.connections);
-    let _ = state.storage.upsert_modules(&cycle.modules);
-    let _ = state.storage.insert_events_batch(&cycle.events);
-    let _ = state.storage.append_diagnostic_log(
-        "INFO",
-        &format!("Monitoring active ({} processes).", cycle.processes.len()),
-    );
-    Ok(true)
+async fn start_monitoring(state: State<'_, AppState>) -> Result<bool, String> {
+    let collector = Arc::clone(&state.collector);
+    let storage = state.storage.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        collector.start();
+        let cycle = collector.collect_once();
+        let _ = storage.upsert_processes(&cycle.processes);
+        let _ = storage.upsert_network_connections(&cycle.connections);
+        let _ = storage.upsert_modules(&cycle.modules);
+        let _ = storage.insert_events_batch(&cycle.events);
+        let _ = storage.append_diagnostic_log(
+            "INFO",
+            &format!("Monitoring active ({} processes).", cycle.processes.len()),
+        );
+        Ok(true)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -262,7 +273,7 @@ fn stop_monitoring(state: State<'_, AppState>) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn get_overview(
+async fn get_overview(
     state: State<'_, AppState>,
     range: String,
     mode: Option<DataSourceMode>,
@@ -271,132 +282,134 @@ fn get_overview(
     if active_mode == DataSourceMode::Demo {
         return Ok(DemoFixtureEngine::overview(&range));
     }
-
     let settings = state.settings.lock().map(|s| s.clone()).unwrap_or_default();
-    let procs = state
-        .storage
-        .query_processes(60, 0)
-        .map_err(|e| e.to_string())?;
-    let conns = state
-        .storage
-        .query_network_connections(200)
-        .map_err(|e| e.to_string())?;
-    let mods = state
-        .storage
-        .query_modules(None, 300)
-        .map_err(|e| e.to_string())?;
-    let caps = state.collector.capabilities();
-    let allowlist = state.storage.list_allowlist().unwrap_or_default();
-    let rules = RuleEngine::evaluate(&procs, &conns, &mods, &caps, &allowlist);
-    let storage = state
-        .storage
-        .diagnostics(settings.ring_buffer_cap_mb)
-        .map_err(|e| e.to_string())?;
+    let storage_eng = state.storage.clone();
+    let collector = Arc::clone(&state.collector);
 
-    let matched_rules = rules
-        .iter()
-        .filter(|r| r.verdict == RuleVerdict::Matched)
-        .count() as u64;
+    tauri::async_runtime::spawn_blocking(move || {
+        let procs = storage_eng
+            .query_processes(60, 0)
+            .map_err(|e| e.to_string())?;
+        let conns = storage_eng
+            .query_network_connections(200)
+            .map_err(|e| e.to_string())?;
+        let mods = storage_eng
+            .query_modules(None, 300)
+            .map_err(|e| e.to_string())?;
+        let caps = collector.capabilities();
+        let allowlist = storage_eng.list_allowlist().unwrap_or_default();
+        let rules = RuleEngine::evaluate(&procs, &conns, &mods, &caps, &allowlist);
+        let storage = storage_eng
+            .diagnostics(settings.ring_buffer_cap_mb)
+            .map_err(|e| e.to_string())?;
 
-    let now_ms = Utc::now().timestamp_millis();
-    let (bucket_count, step_ms, is_days): (usize, i64, bool) = match range.as_str() {
-        "15M" => (12, 75_000, false),
-        "1H" => (12, 300_000, false),
-        "6H" => (12, 1_800_000, false),
-        "24H" => (12, 7_200_000, false),
-        "7D" => (7, 86_400_000, true),
-        _ => (12, 300_000, false),
-    };
-    let window_start_ms = now_ms - (bucket_count as i64 * step_ms);
-    let recent_events = state
-        .storage
-        .query_events(&EventQuery {
-            limit: 2500,
-            ..Default::default()
-        })
-        .unwrap_or_default();
+        let matched_rules = rules
+            .iter()
+            .filter(|r| r.verdict == RuleVerdict::Matched)
+            .count() as u64;
 
-    let mut proc_bins = vec![0u64; bucket_count];
-    let mut net_bins = vec![0u64; bucket_count];
-    let mut mod_bins = vec![0u64; bucket_count];
-    let mut rule_bins = vec![0u64; bucket_count];
+        let now_ms = Utc::now().timestamp_millis();
+        let (bucket_count, step_ms, is_days): (usize, i64, bool) = match range.as_str() {
+            "15M" => (12, 75_000, false),
+            "1H" => (12, 300_000, false),
+            "6H" => (12, 1_800_000, false),
+            "24H" => (12, 7_200_000, false),
+            "7D" => (7, 86_400_000, true),
+            _ => (12, 300_000, false),
+        };
+        let window_start_ms = now_ms - (bucket_count as i64 * step_ms);
+        let recent_events = storage_eng
+            .query_events(&EventQuery {
+                limit: 1200,
+                ..Default::default()
+            })
+            .unwrap_or_default();
 
-    for ev in &recent_events {
-        if ev.event_ts_ms < window_start_ms || ev.event_ts_ms > now_ms {
-            continue;
-        }
-        let idx = (((ev.event_ts_ms - window_start_ms) / step_ms) as usize).min(bucket_count - 1);
-        match ev.category {
-            EventCategory::Process => proc_bins[idx] += 1,
-            EventCategory::Network => net_bins[idx] += 1,
-            EventCategory::Module => mod_bins[idx] += 1,
-            EventCategory::Rule => rule_bins[idx] += 1,
-            EventCategory::System => proc_bins[idx] += 1,
-        }
-    }
-    if let Some(last) = bucket_count.checked_sub(1) {
-        if proc_bins[last] == 0 && !procs.is_empty() {
-            proc_bins[last] = (procs.len() as u64 / 8).max(1);
-        }
-        if net_bins[last] == 0 && !conns.is_empty() {
-            net_bins[last] = (conns.len() as u64 / 4).max(1);
-        }
-        if mod_bins[last] == 0 && !mods.is_empty() {
-            mod_bins[last] = (mods.len() as u64 / 12).max(1);
-        }
-        rule_bins[last] = rule_bins[last].max(matched_rules);
-    }
+        let mut proc_bins = vec![0u64; bucket_count];
+        let mut net_bins = vec![0u64; bucket_count];
+        let mut mod_bins = vec![0u64; bucket_count];
+        let mut rule_bins = vec![0u64; bucket_count];
 
-    let timeline: Vec<TimelineBucket> = (0..bucket_count)
-        .map(|i| {
-            let bucket_ts = now_ms - (((bucket_count - 1 - i) as i64) * step_ms);
-            let label = Local
-                .timestamp_millis_opt(bucket_ts)
-                .single()
-                .map(|dt| {
-                    if is_days {
-                        dt.format("%a %d").to_string()
-                    } else {
-                        dt.format("%H:%M").to_string()
-                    }
-                })
-                .unwrap_or_else(|| format!("T-{i}"));
-            let p = proc_bins[i];
-            let n = net_bins[i];
-            let m = mod_bins[i];
-            let r = rule_bins[i];
-            TimelineBucket {
-                timestamp_ms: bucket_ts,
-                label,
-                total_events: p + n + m + r,
-                process_events: p,
-                network_events: n,
-                module_events: m,
-                rule_events: r,
+        for ev in &recent_events {
+            if ev.event_ts_ms < window_start_ms || ev.event_ts_ms > now_ms {
+                continue;
             }
-        })
-        .collect();
+            let idx =
+                (((ev.event_ts_ms - window_start_ms) / step_ms) as usize).min(bucket_count - 1);
+            match ev.category {
+                EventCategory::Process => proc_bins[idx] += 1,
+                EventCategory::Network => net_bins[idx] += 1,
+                EventCategory::Module => mod_bins[idx] += 1,
+                EventCategory::Rule => rule_bins[idx] += 1,
+                EventCategory::System => proc_bins[idx] += 1,
+            }
+        }
+        if let Some(last) = bucket_count.checked_sub(1) {
+            if proc_bins[last] == 0 && !procs.is_empty() {
+                proc_bins[last] = (procs.len() as u64 / 8).max(1);
+            }
+            if net_bins[last] == 0 && !conns.is_empty() {
+                net_bins[last] = (conns.len() as u64 / 4).max(1);
+            }
+            if mod_bins[last] == 0 && !mods.is_empty() {
+                mod_bins[last] = (mods.len() as u64 / 12).max(1);
+            }
+            rule_bins[last] = rule_bins[last].max(matched_rules);
+        }
 
-    Ok(OverviewSnapshot {
-        mode: DataSourceMode::Live,
-        privilege_mode: state.collector.privilege_mode(),
-        monitoring_active: state.collector.is_active(),
-        active_process_count: procs.iter().filter(|p| p.is_active).count() as u64,
-        total_events_window: storage.total_events,
-        process_spawns_count: procs.len() as u64,
-        network_calls_count: conns.len() as u64,
-        dll_loads_count: mods.len() as u64,
-        rule_matches_count: matched_rules,
-        high_activity_apps: procs.into_iter().take(12).collect(),
-        timeline,
-        storage,
-        collector_health_ok: state.collector.is_active(),
-        dropped_events_24h: state.collector.dropped_events(),
+        let timeline: Vec<TimelineBucket> = (0..bucket_count)
+            .map(|i| {
+                let bucket_ts = now_ms - (((bucket_count - 1 - i) as i64) * step_ms);
+                let label = Local
+                    .timestamp_millis_opt(bucket_ts)
+                    .single()
+                    .map(|dt| {
+                        if is_days {
+                            dt.format("%a %d").to_string()
+                        } else {
+                            dt.format("%H:%M").to_string()
+                        }
+                    })
+                    .unwrap_or_else(|| format!("T-{i}"));
+                let p = proc_bins[i];
+                let n = net_bins[i];
+                let m = mod_bins[i];
+                let r = rule_bins[i];
+                TimelineBucket {
+                    timestamp_ms: bucket_ts,
+                    label,
+                    total_events: p + n + m + r,
+                    process_events: p,
+                    network_events: n,
+                    module_events: m,
+                    rule_events: r,
+                }
+            })
+            .collect();
+
+        Ok(OverviewSnapshot {
+            mode: DataSourceMode::Live,
+            privilege_mode: collector.privilege_mode(),
+            monitoring_active: collector.is_active(),
+            active_process_count: procs.iter().filter(|p| p.is_active).count() as u64,
+            total_events_window: storage.total_events,
+            process_spawns_count: procs.len() as u64,
+            network_calls_count: conns.len() as u64,
+            dll_loads_count: mods.len() as u64,
+            rule_matches_count: matched_rules,
+            high_activity_apps: procs.into_iter().take(12).collect(),
+            timeline,
+            storage,
+            collector_health_ok: collector.is_active(),
+            dropped_events_24h: collector.dropped_events(),
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_processes(
+async fn get_processes(
     state: State<'_, AppState>,
     mode: Option<DataSourceMode>,
     limit: Option<usize>,
@@ -405,28 +418,36 @@ fn get_processes(
     if state.current_mode(mode) == DataSourceMode::Demo {
         return Ok(DemoFixtureEngine::processes());
     }
-    state
-        .storage
-        .query_processes(limit.unwrap_or(150), offset.unwrap_or(0))
-        .map_err(|e| e.to_string())
+    let storage = state.storage.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        storage
+            .query_processes(limit.unwrap_or(150), offset.unwrap_or(0))
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_network_connections(
+async fn get_network_connections(
     state: State<'_, AppState>,
     mode: Option<DataSourceMode>,
 ) -> Result<Vec<NetworkConnectionRecord>, String> {
     if state.current_mode(mode) == DataSourceMode::Demo {
         return Ok(DemoFixtureEngine::network_connections());
     }
-    state
-        .storage
-        .query_network_connections(250)
-        .map_err(|e| e.to_string())
+    let storage = state.storage.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        storage
+            .query_network_connections(250)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_modules(
+async fn get_modules(
     state: State<'_, AppState>,
     mode: Option<DataSourceMode>,
     process_key: Option<String>,
@@ -434,10 +455,14 @@ fn get_modules(
     if state.current_mode(mode) == DataSourceMode::Demo {
         return Ok(DemoFixtureEngine::modules_for_updater());
     }
-    state
-        .storage
-        .query_modules(process_key.as_deref(), 250)
-        .map_err(|e| e.to_string())
+    let storage = state.storage.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        storage
+            .query_modules(process_key.as_deref(), 250)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -816,18 +841,7 @@ pub fn run() {
 
     let collector = Arc::new(CollectorRuntime::new(settings.privilege_mode));
     collector.start();
-    let initial_cycle = collector.collect_once();
-    let _ = storage.upsert_processes(&initial_cycle.processes);
-    let _ = storage.upsert_network_connections(&initial_cycle.connections);
-    let _ = storage.upsert_modules(&initial_cycle.modules);
-    let _ = storage.insert_events_batch(&initial_cycle.events);
-    let _ = storage.append_diagnostic_log(
-        "INFO",
-        &format!(
-            "Engine started ({} active processes).",
-            initial_cycle.processes.len()
-        ),
-    );
+    let _ = storage.append_diagnostic_log("INFO", "Engine started (async background collector).");
 
     let bg_collector = Arc::clone(&collector);
     let bg_storage = storage.clone();
@@ -854,7 +868,7 @@ pub fn run() {
                         }
                     }
                 }
-                tokio::time::sleep(Duration::from_secs(3)).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
         });
     });
