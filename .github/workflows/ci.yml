@@ -1,26 +1,32 @@
-name: SilentWatch CI & Windows NSIS Build
+name: SilentWatch CI, Windows + Linux Installers & Release
 
 on:
   push:
     branches: [silentwatch-gemini, main]
+    tags: ['v*']
   pull_request:
     branches: [silentwatch-gemini, main]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   rust-core-checks:
-    name: Rust Core (Clippy & Unit Tests)
+    name: Rust Core (Format, Clippy, Unit Tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: rustfmt, clippy
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
       - name: Run Clippy on core crates
-        run: cargo clippy --workspace --exclude silentwatch-desktop --all-targets
+        run: cargo clippy --workspace --exclude silentwatch-desktop --all-targets -- -D warnings
       - name: Run Rust workspace unit tests
         run: cargo test --workspace --exclude silentwatch-desktop
 
@@ -32,8 +38,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
       - name: Install dependencies
-        run: npm install
+        run: npm ci
       - name: TypeScript strict typecheck
         run: npm run typecheck
       - name: Run Vitest component & interaction tests
@@ -41,8 +48,8 @@ jobs:
       - name: Production Vite build
         run: npm run build
 
-  windows-tauri-build:
-    name: Windows NSIS Installer Build
+  windows-build:
+    name: Windows Custom Installer (SilentWatch-Setup.exe)
     runs-on: windows-latest
     needs: [rust-core-checks, frontend-checks]
     steps:
@@ -50,22 +57,88 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+          cache: npm
       - uses: dtolnay/rust-toolchain@stable
-      - name: Generate SilentWatch desktop icons
-        run: |
-          pip install pillow
-          python scripts/generate-icons.py
       - name: Install frontend dependencies
-        run: npm install
+        run: npm ci
+      - name: Unpack official SilentWatch App & Setup icons
+        run: node scripts/unpack-icons.mjs
       - name: Run Windows Rust collector & core tests
         run: cargo test --workspace --exclude silentwatch-desktop
-      - name: Build SilentWatch Windows NSIS installer (.exe)
-        run: npx tauri build --bundles nsis
-      - name: Upload Windows NSIS Installer (.exe)
+      - name: Build SilentWatch Windows desktop binary (with official icon)
+        run: npx tauri build --no-bundle
+      - name: Compress silentwatch-desktop.exe into custom installer payload
+        shell: pwsh
+        run: |
+          $src = "target/release/silentwatch-desktop.exe"
+          $dst = "crates/silentwatch-installer/payload/silentwatch-desktop.exe.gz"
+          New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
+          $inStream = [System.IO.File]::OpenRead($src)
+          $outStream = [System.IO.File]::Create($dst)
+          $gzip = New-Object System.IO.Compression.GzipStream($outStream, [System.IO.Compression.CompressionLevel]::Optimal)
+          $inStream.CopyTo($gzip)
+          $gzip.Close()
+          $outStream.Close()
+          $inStream.Close()
+          Get-Item $dst | Select-Object Name, Length
+      - name: Build custom SilentWatch-Setup.exe (with embedded Setup icon)
+        run: cargo build --release -p silentwatch-installer
+      - name: Upload Windows installer artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: silentwatch-windows-nsis-installer
-          path: target/release/bundle/nsis/*.exe
+          name: silentwatch-windows-installer
+          path: |
+            target/release/SilentWatch-Setup.exe
+            target/release/silentwatch-desktop.exe
+
+  linux-build:
+    name: Linux Installers (.deb & .AppImage)
+    runs-on: ubuntu-22.04
+    needs: [rust-core-checks, frontend-checks]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Tauri Linux desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Unpack official SilentWatch icons
+        run: node scripts/unpack-icons.mjs
+      - name: Build SilentWatch Linux .deb & .AppImage installers
+        run: npx tauri build --bundles deb,appimage
+      - name: Upload Linux installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: silentwatch-linux-installers
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/appimage/*.AppImage
+
+  publish-release:
+    name: Publish GitHub Release (Windows + Linux)
+    runs-on: ubuntu-latest
+    needs: [windows-build, linux-build]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+      - name: Publish Release to GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v0.1.0' }}
+          name: SilentWatch ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v0.1.0' }}
+          body: |
+            ## SilentWatch Release (Windows & Linux)
+            - **Windows**: Custom `SilentWatch-Setup.exe` installer with official SilentWatch Setup icon, live CPU/RAM telemetry, 60fps official logo launch reveal, and background System Tray service.
+            - **Linux**: Native `.deb` and `.AppImage` desktop packages.
+          files: |
+            release-artifacts/silentwatch-windows-installer/SilentWatch-Setup.exe
+            release-artifacts/silentwatch-linux-installers/*.deb
+            release-artifacts/silentwatch-linux-installers/*.AppImage
