@@ -255,11 +255,24 @@ export interface AppSettings {
   start_minimized_to_tray: boolean;
   collect_command_line_sanitized: boolean;
   collect_module_snapshots: boolean;
+  last_seen_version: string | null;
+  auto_check_updates: boolean;
   shortcuts: {
     command_palette: string;
     export_report: string;
     toggle_monitoring: string;
   };
+}
+
+export interface UpdateCheckResult {
+  current_version: string;
+  latest_version: string;
+  update_available: boolean;
+  release_notes: string;
+  installer_url: string | null;
+  whats_new_video_url: string | null;
+  release_page_url: string;
+  checked_ok: boolean;
 }
 
 export type ExportFormat = 'markdown' | 'json' | 'csv';

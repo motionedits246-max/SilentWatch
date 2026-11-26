@@ -13,6 +13,7 @@ import type {
   RuleMatchRecord,
   SystemStatusSnapshot,
   TelemetryEvent,
+  UpdateCheckResult,
 } from '@/types/telemetry';
 import { createBrowserPreviewBackend } from './browserPreviewBackend';
 
@@ -31,6 +32,15 @@ async function call<T>(cmd: string, args: Record<string, unknown>, fallback: () 
 
 export const ipc = {
   signalUiReady: () => call<void>('signal_ui_ready', {}, () => undefined),
+  windowMinimize: () => call<void>('window_minimize', {}, () => undefined),
+  windowToggleMaximize: () => call<boolean>('window_toggle_maximize', {}, () => false),
+  windowCloseToTray: () => call<void>('window_close_to_tray', {}, () => undefined),
+  shouldShowReleaseVideo: () =>
+    call<boolean>('should_show_release_video', {}, () => preview.shouldShowReleaseVideo()),
+  markReleaseVideoSeen: () =>
+    call<void>('mark_release_video_seen', {}, () => preview.markReleaseVideoSeen()),
+  checkForUpdates: () =>
+    call<UpdateCheckResult>('check_for_updates', {}, () => preview.checkForUpdates()),
   getSettings: () => call<AppSettings>('get_settings', {}, () => preview.getSettings()),
   saveSettings: (settings: AppSettings) =>
     call<AppSettings>('save_settings', { settings }, () => preview.saveSettings(settings)),
