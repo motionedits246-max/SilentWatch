@@ -219,7 +219,8 @@ fn main() {
                 match val["action"].as_str().unwrap_or("") {
                     "init" => {
                         let js_dir = serde_json::to_string(&default_dir).unwrap_or_default();
-                        let _ = webview.evaluate_script(&format!("window.__setDefaultDir({js_dir})"));
+                        let _ =
+                            webview.evaluate_script(&format!("window.__setDefaultDir({js_dir})"));
                     }
                     "drag" => {
                         let _ = window.drag_window();
@@ -254,10 +255,9 @@ fn main() {
                                 });
                                 match res {
                                     Ok(exe_path) => {
-                                        let js_exe = serde_json::to_string(
-                                            &exe_path.display().to_string(),
-                                        )
-                                        .unwrap_or_default();
+                                        let js_exe =
+                                            serde_json::to_string(&exe_path.display().to_string())
+                                                .unwrap_or_default();
                                         let _ = p.send_event(UserEvent::EvalJs(format!(
                                             "window.__onInstallComplete({js_exe})"
                                         )));
