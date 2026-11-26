@@ -1,5 +1,33 @@
+# Dependencies
 node_modules/
 dist/
+dist-ssr/
+*.local
+
+# Rust / Tauri
 target/
-test-results/
-*.db*
+src-tauri/target/
+*.rs.bk
+
+# Local SQLite databases & user telemetry (NEVER commit)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Research archives, copyrighted videos & large local artifacts
+design-spec-extracted/
+*.zip
+*.mp4
+*.webm
+*.mov
+*.avi
+verification-artifacts/
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

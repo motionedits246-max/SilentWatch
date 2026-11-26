@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SilentWatch",
+  "version": "0.1.0",
+  "identifier": "com.silentwatch.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "SilentWatch",
+        "width": 1360,
+        "height": 860,
+        "minWidth": 1024,
+        "minHeight": 680,
+        "center": true,
+        "decorations": false,
+        "transparent": false,
+        "backgroundColor": "#050505",
+        "visible": false,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' https: blob: data:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https://api.github.com;"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "msi",
+      "deb",
+      "appimage"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "installerHooks": "nsis/installer-hooks.nsh",
+        "installerIcon": "icons/installer.ico"
+      }
+    }
+  }
+}
