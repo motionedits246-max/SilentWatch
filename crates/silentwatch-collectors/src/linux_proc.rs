@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+/// Cross-platform Linux `/proc` collector used on Linux development & CI hosts
+/// so the monitoring engine runs against genuine OS telemetry without mocking.
 pub fn collect_snapshot(
     boot_id: &str,
     now_ms: i64,
@@ -40,24 +42,22 @@ pub fn collect_snapshot(
                 .ok()
                 .map(|p| RedactionEngine::sanitize_str(&p.display().to_string()));
 
-            let cmdline = fs::read(proc_dir.join("cmdline"))
-                .ok()
-                .and_then(|bytes| {
-                    if bytes.is_empty() {
-                        return None;
-                    }
-                    let joined = bytes
-                        .split(|&b| b == 0)
-                        .filter(|s| !s.is_empty())
-                        .map(|s| String::from_utf8_lossy(s).into_owned())
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    if joined.is_empty() {
-                        None
-                    } else {
-                        Some(RedactionEngine::sanitize_str(&joined))
-                    }
-                });
+            let cmdline = fs::read(proc_dir.join("cmdline")).ok().and_then(|bytes| {
+                if bytes.is_empty() {
+                    return None;
+                }
+                let joined = bytes
+                    .split(|&b| b == 0)
+                    .filter(|s| !s.is_empty())
+                    .map(|s| String::from_utf8_lossy(s).into_owned())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if joined.is_empty() {
+                    None
+                } else {
+                    Some(RedactionEngine::sanitize_str(&joined))
+                }
+            });
 
             let start_time_ms = now_ms - (start_ticks as i64 * 10);
             let instance_id = ProcessInstanceId::new(boot_id, pid, start_time_ms);
@@ -99,6 +99,7 @@ pub fn collect_snapshot(
         }
     }
 
+    // Enumerate a bounded sample of loaded shared libraries for our own process
     let mut modules = Vec::new();
     let self_pid = std::process::id();
     if let Some(self_inst) = pid_to_instance.get(&self_pid) {

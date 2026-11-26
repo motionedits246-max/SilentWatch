@@ -20,10 +20,12 @@ impl ProcessInstanceId {
         }
     }
 
+    /// Deterministic human-readable stable identifier (e.g. `boot_9f2a:4812:1732611728412`).
     pub fn stable_key(&self) -> String {
         format!("{}:{}:{}", self.boot_id, self.pid, self.start_time_ms)
     }
 
+    /// Compact hash token for graph node IDs and database foreign keys.
     pub fn short_hash(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(self.stable_key().as_bytes());

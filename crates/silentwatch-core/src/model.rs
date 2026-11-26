@@ -131,6 +131,7 @@ pub enum EventPayload {
     },
 }
 
+/// Normalized, typed telemetry event envelope.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TelemetryEvent {
     pub event_id: String,

@@ -44,6 +44,8 @@ pub struct ExportResult {
     pub generated_ts_ms: i64,
 }
 
+/// Strictly allowlisted Command Palette (`Ctrl+K`) actions.
+/// Prevents arbitrary shell or filesystem execution from frontend IPC.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AllowlistedAction {
@@ -81,6 +83,7 @@ impl AllowlistedAction {
     }
 }
 
+/// Generates sanitized Markdown, JSON, or CSV evidence reports with automatic redaction.
 pub fn build_sanitized_export(
     req: &ExportRequest,
     processes: &[ProcessSummary],
@@ -112,7 +115,9 @@ pub fn build_sanitized_export(
 
             if req.include_processes {
                 md.push_str("## Observed Processes\n\n");
-                md.push_str("| Executable | Stable Identity | Signature | CPU % | Memory MB | Path |\n");
+                md.push_str(
+                    "| Executable | Stable Identity | Signature | CPU % | Memory MB | Path |\n",
+                );
                 md.push_str("| :--- | :--- | :--- | ---: | ---: | :--- |\n");
                 for p in &filtered_procs {
                     md.push_str(&format!(
@@ -263,7 +268,11 @@ mod tests {
         let conns = DemoFixtureEngine::network_connections();
         let rules = DemoFixtureEngine::rule_matches();
 
-        for fmt in [ExportFormat::Markdown, ExportFormat::Json, ExportFormat::Csv] {
+        for fmt in [
+            ExportFormat::Markdown,
+            ExportFormat::Json,
+            ExportFormat::Csv,
+        ] {
             let req = ExportRequest {
                 format: fmt,
                 mode: DataSourceMode::Demo,

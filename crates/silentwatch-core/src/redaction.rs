@@ -13,6 +13,7 @@ pub struct RedactionEngine;
 
 fn user_path_win_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
+    // Matches both raw `C:\Users\Name` and JSON-escaped `C:\\Users\\Name`
     RE.get_or_init(|| Regex::new(r#"(?i)[A-Z]:\\{1,2}Users\\{1,2}[^\\\s"']+"#).unwrap())
 }
 
@@ -29,12 +30,15 @@ fn bearer_re() -> &'static Regex {
 fn secret_kv_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r#"(?i)(--?(?:token|api[-_]?key|password|passwd|secret|auth)\s*[=\s]\s*)([^\s"']{4,})"#)
-            .unwrap()
+        Regex::new(
+            r#"(?i)(--?(?:token|api[-_]?key|password|passwd|secret|auth)\s*[=\s]\s*)([^\s"']{4,})"#,
+        )
+        .unwrap()
     })
 }
 
 impl RedactionEngine {
+    /// Sanitizes local user paths (raw or JSON-escaped), bearer tokens, and CLI secrets.
     pub fn sanitize(input: &str) -> (String, RedactionSummary) {
         let mut summary = RedactionSummary::default();
 
