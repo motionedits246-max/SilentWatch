@@ -1,0 +1,74 @@
+name: SilentWatch CI & Windows Build
+
+on:
+  push:
+    branches: [silentwatch-gemini, main]
+  pull_request:
+    branches: [silentwatch-gemini, main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust-core-checks:
+    name: Rust Core (Format, Clippy, Unit Tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+      - name: Run Clippy on core crates
+        run: cargo clippy --workspace --exclude silentwatch-desktop --all-targets -- -D warnings
+      - name: Run Rust workspace unit tests
+        run: cargo test --workspace --exclude silentwatch-desktop
+
+  frontend-checks:
+    name: Frontend (Typecheck, Vitest, Vite Build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install
+      - name: TypeScript strict typecheck
+        run: npm run typecheck
+      - name: Run Vitest component & interaction tests
+        run: npm test
+      - name: Production Vite build
+        run: npm run build
+
+  windows-tauri-build:
+    name: Windows Desktop Build & Installer (NSIS / MSI)
+    runs-on: windows-latest
+    needs: [rust-core-checks, frontend-checks]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Generate desktop icons
+        run: |
+          pip install pillow
+          python scripts/generate-icons.py
+      - name: Install frontend dependencies
+        run: npm install
+      - name: Run Windows Rust collector & core tests
+        run: cargo test --workspace --exclude silentwatch-desktop
+      - name: Build SilentWatch Windows desktop app & installers (unsigned CI artifacts)
+        run: npx tauri build --bundles nsis,msi
+      - name: Upload Windows installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: silentwatch-windows-installers
+          path: |
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/msi/*.msi
