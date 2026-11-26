@@ -2,6 +2,9 @@ use chrono::Utc;
 use silentwatch_core::*;
 use std::collections::HashMap;
 
+/// Safe declarative detection rule engine.
+/// Evaluates structured telemetry without executing arbitrary scripts and never
+/// classifies unsigned software or ordinary network activity as malware.
 pub struct RuleEngine;
 
 impl RuleEngine {
@@ -19,23 +22,33 @@ impl RuleEngine {
             .collect();
 
         let is_allowlisted = |exe_name: &str| {
-            allowlist.iter().any(|e| {
-                e.match_type == "exe_name" && e.value.eq_ignore_ascii_case(exe_name)
-            })
+            allowlist
+                .iter()
+                .any(|e| e.match_type == "exe_name" && e.value.eq_ignore_ascii_case(exe_name))
         };
 
-        let shells = ["powershell.exe", "pwsh.exe", "cmd.exe", "wscript.exe", "cscript.exe", "sh", "bash"];
+        // Rule SW-001: Unsigned parent spawning scripting shell
+        let shells = [
+            "powershell.exe",
+            "pwsh.exe",
+            "cmd.exe",
+            "wscript.exe",
+            "cscript.exe",
+            "sh",
+            "bash",
+        ];
         for child in processes {
             let child_lower = child.exe_name.to_lowercase();
             if shells.iter().any(|s| child_lower == *s) {
                 if let Some(ref parent_id) = child.parent_instance_id {
                     if let Some(parent) = proc_map.get(&parent_id.stable_key()) {
                         if parent.signature_status == SignatureStatus::Unsigned {
-                            let verdict = if is_allowlisted(&parent.exe_name) || parent.is_allowlisted {
-                                RuleVerdict::Allowlisted
-                            } else {
-                                RuleVerdict::Matched
-                            };
+                            let verdict =
+                                if is_allowlisted(&parent.exe_name) || parent.is_allowlisted {
+                                    RuleVerdict::Allowlisted
+                                } else {
+                                    RuleVerdict::Matched
+                                };
                             results.push(RuleMatchRecord {
                                 id: format!("sw001-{}", child.instance_id.short_hash()),
                                 rule_id: "SW-001".into(),
@@ -68,10 +81,17 @@ impl RuleEngine {
             }
         }
 
+        // Rule SW-002: Unsigned DLL loaded inside a signed host process
         let module_cap = capabilities
             .iter()
             .find(|c| c.id == "modules_snapshot" || c.id == "etw_image_load");
-        if module_cap.map(|c| c.state == CapabilityState::ElevationRequired || c.state == CapabilityState::UnavailableOnPlatform).unwrap_or(false) {
+        if module_cap
+            .map(|c| {
+                c.state == CapabilityState::ElevationRequired
+                    || c.state == CapabilityState::UnavailableOnPlatform
+            })
+            .unwrap_or(false)
+        {
             results.push(RuleMatchRecord {
                 id: "sw002-capability".into(),
                 rule_id: "SW-002".into(),
@@ -88,7 +108,10 @@ impl RuleEngine {
                 missing_capability: Some("Module Snapshot or Kernel ImageLoad ETW".into()),
             });
         } else {
-            for m in modules.iter().filter(|m| m.signature_status == SignatureStatus::Unsigned) {
+            for m in modules
+                .iter()
+                .filter(|m| m.signature_status == SignatureStatus::Unsigned)
+            {
                 if let Some(host) = proc_map.get(&m.process_instance_id.stable_key()) {
                     if host.signature_status == SignatureStatus::SignedVerified {
                         let verdict = if is_allowlisted(&host.exe_name) {
@@ -100,7 +123,8 @@ impl RuleEngine {
                             id: format!("sw002-{}", m.id),
                             rule_id: "SW-002".into(),
                             rule_name: "Unsigned Module in Signed Host".into(),
-                            description: "Observed an unsigned DLL loaded in a signed process.".into(),
+                            description: "Observed an unsigned DLL loaded in a signed process."
+                                .into(),
                             verdict,
                             severity_label: "Notable Behavior".into(),
                             process_instance_id: Some(host.instance_id.clone()),
@@ -122,6 +146,7 @@ impl RuleEngine {
             }
         }
 
+        // Rule SW-003: Process running from Temp directory making external connections
         for conn in connections {
             if let Some(proc_info) = proc_map.get(&conn.process_instance_id.stable_key()) {
                 let in_temp = proc_info
@@ -142,7 +167,9 @@ impl RuleEngine {
                         id: format!("sw003-{}", conn.id),
                         rule_id: "SW-003".into(),
                         rule_name: "Temp-Directory Process Network Activity".into(),
-                        description: "Process executing from a temporary folder opened a network connection.".into(),
+                        description:
+                            "Process executing from a temporary folder opened a network connection."
+                                .into(),
                         verdict,
                         severity_label: "Notable Behavior".into(),
                         process_instance_id: Some(proc_info.instance_id.clone()),
@@ -155,7 +182,10 @@ impl RuleEngine {
                         ),
                         evidence: vec![
                             format!("Path: {}", proc_info.exe_path.clone().unwrap_or_default()),
-                            format!("Remote: {}:{} ({})", conn.remote_addr, conn.remote_port, conn.protocol),
+                            format!(
+                                "Remote: {}:{} ({})",
+                                conn.remote_addr, conn.remote_port, conn.protocol
+                            ),
                         ],
                         missing_capability: None,
                     });
@@ -163,6 +193,7 @@ impl RuleEngine {
             }
         }
 
+        // Rule SW-005: Kernel ETW Cross-User Monitor (honest capability state)
         let etw_active = capabilities
             .iter()
             .any(|c| c.id == "etw_kernel_process" && c.state == CapabilityState::Active);
