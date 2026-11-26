@@ -271,6 +271,7 @@ export interface UpdateCheckResult {
   release_notes: string;
   installer_url: string | null;
   whats_new_video_url: string | null;
+  startup_video_url: string | null;
   release_page_url: string;
   checked_ok: boolean;
 }

@@ -251,13 +251,20 @@ export const App: React.FC = () => {
   return (
     <div className={`sw-shell ${activeMode === 'demo' ? 'is-demo' : ''}`}>
       <AnimatePresence>
-        {showIntro && <LaunchIntro onFinished={() => setShowIntro(false)} />}
+        {showIntro && (
+          <LaunchIntro
+            startupVideoUrl={updateInfo?.startup_video_url}
+            onFinished={() => setShowIntro(false)}
+          />
+        )}
       </AnimatePresence>
 
       {!showIntro && showReleaseModal && (
         <ReleaseShowcaseModal
           version={updateInfo?.current_version ?? '0.1.0'}
           updateInfo={updateInfo}
+          checkingUpdates={checkingUpdates}
+          onCheckUpdates={() => void runUpdateCheck()}
           onContinue={() => {
             setShowReleaseModal(false);
             void ipc.markReleaseVideoSeen().catch(() => undefined);
@@ -272,13 +279,17 @@ export const App: React.FC = () => {
         motionTier={motionTier}
         sidebarCollapsed={sidebarCollapsed}
         updateInfo={updateInfo}
+        checkingUpdates={checkingUpdates}
         onModeChange={handleModeChange}
         onToggleSidebar={() => setSidebarCollapsed((c) => !c)}
         onOpenPalette={() => {
           setPaletteSummonCount((c) => c + 1);
           setPaletteOpen(true);
         }}
-        onOpenUpdateModal={() => setShowReleaseModal(true)}
+        onCheckAndOpenReleases={() => {
+          setShowReleaseModal(true);
+          void runUpdateCheck();
+        }}
         onHideToTray={() => {
           setTrayToast(true);
           setTimeout(() => setTrayToast(false), 2600);
