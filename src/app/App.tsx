@@ -82,6 +82,7 @@ class PanelErrorBoundary extends Component<
 
 export const App: React.FC = () => {
   const [showIntro, setShowIntro] = useState(true);
+  const [dataReady, setDataReady] = useState(false);
   const [showReleaseModal, setShowReleaseModal] = useState(false);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [activeScreen, setActiveScreen] = useState<ScreenId>('overview');
@@ -93,10 +94,12 @@ export const App: React.FC = () => {
   const [coldOpenOverview, setColdOpenOverview] = useState(true);
   const [trayToast, setTrayToast] = useState(false);
 
+  // GitHub Releases Auto-Update state
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const pollingInFlight = useRef(false);
 
+  // Live telemetry state
   const [overview, setOverview] = useState<OverviewSnapshot | null>(null);
   const [processes, setProcesses] = useState<ProcessSummary[]>([]);
   const [connections, setConnections] = useState<NetworkConnectionRecord[]>([]);
@@ -108,7 +111,7 @@ export const App: React.FC = () => {
   const [sysStatus, setSysStatus] = useState<SystemStatusSnapshot | null>(null);
 
   const motionTier = effectiveMotionTier(settings?.motion_tier ?? 'full');
-  const activeMode: DataSourceMode = settings?.data_source_mode ?? 'live';
+  const activeMode: DataSourceMode = 'live';
 
   const refreshData = useCallback(
     async (mode: DataSourceMode, activeRange: string, procKey?: string) => {
@@ -145,27 +148,33 @@ export const App: React.FC = () => {
         setShowReleaseModal(true);
       }
     } catch {
-      // Offline or rate-limited
+      // Offline or rate-limited: remain silent locally
     } finally {
       setCheckingUpdates(false);
     }
   }, []);
 
+  // Direct-to-dashboard boot: signal window immediately so startup animation plays while data preloads in parallel
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const loaded = await ipc.getSettings();
-      if (cancelled) return;
-      setSettings(loaded);
-      await ipc.signalUiReady();
-      await refreshData(loaded.data_source_mode, '1H');
+      void ipc.signalUiReady();
+      try {
+        const loaded = await ipc.getSettings();
+        if (cancelled) return;
+        setSettings({ ...loaded, data_source_mode: 'live' });
+        await refreshData('live', '1H');
+        if (!cancelled) setDataReady(true);
 
-      const shouldShowVideo = await ipc.shouldShowReleaseVideo().catch(() => false);
-      if (!cancelled && shouldShowVideo) {
-        setShowReleaseModal(true);
-      }
-      if (!cancelled && loaded.auto_check_updates) {
-        void runUpdateCheck();
+        const shouldShowVideo = await ipc.shouldShowReleaseVideo().catch(() => false);
+        if (!cancelled && shouldShowVideo) {
+          setShowReleaseModal(true);
+        }
+        if (!cancelled && loaded.auto_check_updates) {
+          void runUpdateCheck();
+        }
+      } catch {
+        if (!cancelled) setDataReady(true);
       }
     })();
     return () => {
@@ -173,7 +182,7 @@ export const App: React.FC = () => {
     };
   }, [refreshData, runUpdateCheck]);
 
-  // Lightweight screen-scoped 5s polling (paused during intro/modal, guarded against overlap)
+  // Active-screen-only 5-second live polling with overlap guard
   useEffect(() => {
     if (activeMode !== 'live' || showIntro || showReleaseModal) return;
     const id = window.setInterval(async () => {
@@ -218,6 +227,7 @@ export const App: React.FC = () => {
     return () => document.removeEventListener('visibilitychange', onVis);
   }, []);
 
+  // Global keyboard shortcuts (Ctrl+K Command Palette)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -231,13 +241,6 @@ export const App: React.FC = () => {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
-
-  const handleModeChange = async (mode: DataSourceMode) => {
-    if (!settings || settings.data_source_mode === mode) return;
-    const saved = await ipc.saveSettings({ ...settings, data_source_mode: mode });
-    setSettings(saved);
-    await refreshData(mode, range, selectedProcessKey);
-  };
 
   const handleRangeChange = async (nextRange: string) => {
     setRange(nextRange);
@@ -273,16 +276,19 @@ export const App: React.FC = () => {
   const ruleMatchCount = rules.filter((r) => r.verdict === 'matched').length;
 
   return (
-    <div className={`sw-shell ${activeMode === 'demo' ? 'is-demo' : ''}`}>
+    <div className="sw-shell">
+      {/* Every-Launch Intro Animation (max 5s, parallel telemetry preload) */}
       <AnimatePresence>
         {showIntro && (
           <LaunchIntro
             startupVideoUrl={updateInfo?.startup_video_url}
+            dataReady={dataReady}
             onFinished={() => setShowIntro(false)}
           />
         )}
       </AnimatePresence>
 
+      {/* What's New Showcase Video Modal (fresh install, reinstall, or new GitHub Release) */}
       {!showIntro && showReleaseModal && (
         <ReleaseShowcaseModal
           version={updateInfo?.current_version ?? '0.1.0'}
@@ -297,14 +303,11 @@ export const App: React.FC = () => {
       )}
 
       <Titlebar
-        mode={activeMode}
         privilegeMode={settings?.privilege_mode ?? 'standard_per_user'}
         monitoringActive={overview?.monitoring_active ?? false}
-        motionTier={motionTier}
         sidebarCollapsed={sidebarCollapsed}
         updateInfo={updateInfo}
         checkingUpdates={checkingUpdates}
-        onModeChange={handleModeChange}
         onToggleSidebar={() => setSidebarCollapsed((c) => !c)}
         onOpenPalette={() => {
           setPaletteSummonCount((c) => c + 1);
@@ -320,6 +323,7 @@ export const App: React.FC = () => {
         }}
       />
 
+      {/* Main Inset Workspace Frame */}
       <div
         style={{
           flex: 1,
@@ -340,6 +344,7 @@ export const App: React.FC = () => {
           }}
         />
 
+        {/* Direct, crash-safe main workspace */}
         <main style={{ flex: 1, minWidth: 0, height: '100%', position: 'relative' }}>
           <PanelErrorBoundary onReset={() => setActiveScreen('overview')}>
             <div style={{ width: '100%', height: '100%' }}>
@@ -446,6 +451,7 @@ export const App: React.FC = () => {
         </main>
       </div>
 
+      {/* Global Command Palette (Ctrl+K) */}
       <CommandPalette
         open={paletteOpen}
         motionTier={motionTier}
@@ -459,9 +465,7 @@ export const App: React.FC = () => {
         }}
         onInspectProcess={handleInspectProcess}
         onExecuteAction={async (act) => {
-          if (act === 'toggle_data_source_mode') {
-            await handleModeChange(activeMode === 'live' ? 'demo' : 'live');
-          } else if (act === 'toggle_monitoring') {
+          if (act === 'toggle_monitoring') {
             if (overview?.monitoring_active) await ipc.stopMonitoring();
             else await ipc.startMonitoring();
             await refreshData(activeMode, range, selectedProcessKey);
@@ -473,6 +477,7 @@ export const App: React.FC = () => {
         }}
       />
 
+      {/* Tray Hide Feedback Toast */}
       <AnimatePresence>
         {trayToast && (
           <motion.div

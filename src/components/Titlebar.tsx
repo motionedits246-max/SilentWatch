@@ -1,20 +1,15 @@
 import React from 'react';
-import { motion } from 'motion/react';
 import { Download, Minus, PanelLeft, RefreshCw, Search, Square, X } from 'lucide-react';
 import { SilentWatchMark } from '@/assets/VisualAssets';
-import { SPRINGS } from '@/animations/motionTokens';
-import type { DataSourceMode, MotionTier, PrivilegeMode, UpdateCheckResult } from '@/types/telemetry';
+import type { PrivilegeMode, UpdateCheckResult } from '@/types/telemetry';
 import { ipc, isTauriRuntime } from '@/state/ipcClient';
 
 interface TitlebarProps {
-  mode: DataSourceMode;
   privilegeMode: PrivilegeMode;
   monitoringActive: boolean;
-  motionTier: MotionTier;
   sidebarCollapsed: boolean;
   updateInfo: UpdateCheckResult | null;
   checkingUpdates: boolean;
-  onModeChange: (mode: DataSourceMode) => void;
   onToggleSidebar: () => void;
   onOpenPalette: () => void;
   onCheckAndOpenReleases: () => void;
@@ -22,21 +17,17 @@ interface TitlebarProps {
 }
 
 export const Titlebar: React.FC<TitlebarProps> = ({
-  mode,
   privilegeMode,
   monitoringActive,
-  motionTier,
   sidebarCollapsed,
   updateInfo,
   checkingUpdates,
-  onModeChange,
   onToggleSidebar,
   onOpenPalette,
   onCheckAndOpenReleases,
   onHideToTray,
 }) => {
-  const isDemo = mode === 'demo';
-  const dotColor = isDemo ? '#60A5FA' : monitoringActive ? '#5ED18A' : '#847C84';
+  const dotColor = monitoringActive ? '#5ED18A' : '#847C84';
   const hasUpdate = Boolean(updateInfo?.update_available);
 
   const handleWindowAction = async (action: 'minimize' | 'maximize' | 'close') => {
@@ -108,23 +99,22 @@ export const Titlebar: React.FC<TitlebarProps> = ({
           />
           <span
             style={{
-              color: isDemo ? '#93C5FD' : '#E5D9EC',
+              color: '#E5D9EC',
               fontWeight: 500,
-              letterSpacing: isDemo ? '0.03em' : '-0.01em',
+              letterSpacing: '-0.01em',
             }}
           >
-            {isDemo
-              ? 'DEMO FIXTURE'
-              : monitoringActive
-                ? privilegeMode === 'enhanced_etw'
-                  ? 'Live Local • Enhanced ETW'
-                  : 'Live Local • Background Active'
-                : 'Monitoring Paused'}
+            {monitoringActive
+              ? privilegeMode === 'enhanced_etw'
+                ? 'Live Local • Enhanced ETW'
+                : 'Live Local • Background Active'
+              : 'Monitoring Paused'}
           </span>
         </span>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        {/* Top Release / Download Checker Button */}
         <button
           type="button"
           onClick={onCheckAndOpenReleases}
@@ -178,71 +168,13 @@ export const Titlebar: React.FC<TitlebarProps> = ({
           )}
         </button>
 
-        <div
-          role="group"
-          aria-label="Data source mode"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            background: 'rgba(14, 12, 18, 0.8)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            borderRadius: 999,
-            padding: 2,
-            height: 30,
-          }}
-        >
-          {(['live', 'demo'] as const).map((opt) => {
-            const active = mode === opt;
-            return (
-              <button
-                key={opt}
-                type="button"
-                onClick={() => onModeChange(opt)}
-                style={{
-                  position: 'relative',
-                  height: 24,
-                  padding: '0 11px',
-                  border: 'none',
-                  background: 'transparent',
-                  color: active ? '#FFFFFF' : '#8E8894',
-                  fontSize: 11.5,
-                  fontWeight: active ? 500 : 400,
-                  borderRadius: 999,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                }}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="titlebar-mode-pill"
-                    transition={motionTier === 'off' ? { duration: 0 } : SPRINGS.pillGlide}
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      borderRadius: 999,
-                      background:
-                        opt === 'demo'
-                          ? 'rgba(96, 165, 250, 0.22)'
-                          : 'rgba(217, 70, 239, 0.24)',
-                      border: `1px solid ${opt === 'demo' ? '#60A5FA' : '#E879F9'}`,
-                      zIndex: 0,
-                    }}
-                  />
-                )}
-                <span style={{ position: 'relative', zIndex: 1 }}>
-                  {opt === 'live' ? 'Live Local' : 'Demo Fixture'}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
+        {/* Compact Search Trigger */}
         <button
           type="button"
           onClick={onOpenPalette}
           aria-label="Open Command Palette (Ctrl+K)"
           style={{
-            width: 220,
+            width: 172,
             height: 30,
             padding: '0 10px 0 12px',
             borderRadius: 999,
@@ -254,11 +186,12 @@ export const Titlebar: React.FC<TitlebarProps> = ({
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 8,
+            whiteSpace: 'nowrap',
           }}
         >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap' }}>
             <Search size={13} strokeWidth={1.6} color="#8E8894" />
-            <span>Search processes, IPs...</span>
+            <span>Search...</span>
           </span>
           <kbd
             className="mono"

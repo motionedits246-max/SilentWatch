@@ -5,16 +5,14 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::net::Ipv4Addr;
 use std::os::windows::ffi::OsStringExt;
-use windows::core::PWSTR;
+use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, FILETIME, HANDLE};
 use windows::Win32::NetworkManagement::IpHelper::{
     GetExtendedTcpTable, GetExtendedUdpTable, MIB_TCPROW_OWNER_PID, MIB_TCPTABLE_OWNER_PID,
     MIB_UDPROW_OWNER_PID, MIB_UDPTABLE_OWNER_PID, TCP_TABLE_OWNER_PID_ALL, UDP_TABLE_OWNER_PID,
 };
 use windows::Win32::Networking::WinSock::AF_INET;
-use windows::Win32::Security::{
-    GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
-};
+use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Module32FirstW, Module32NextW, Process32FirstW, Process32NextW,
     MODULEENTRY32W, PROCESSENTRY32W, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32, TH32CS_SNAPPROCESS,
@@ -81,9 +79,14 @@ pub fn collect_snapshot(
                     let exe_name = utf16_z_to_string(&entry.szExeFile);
 
                     let (exe_path, start_time_ms, memory_mb, sig_status) =
-                        inspect_process_details(pid, now_ms);
+                        inspect_process_details(pid);
 
                     let instance_id = ProcessInstanceId::new(boot_id, pid, start_time_ms);
+                    let display_first_seen = if start_time_ms > 0 {
+                        start_time_ms
+                    } else {
+                        now_ms
+                    };
                     pid_to_instance.insert(pid, instance_id.clone());
                     pid_to_name.insert(pid, exe_name.clone());
 
@@ -108,7 +111,7 @@ pub fn collect_snapshot(
                         sparkline: vec![4, 5, 6, 5, 7, 6, 8, 7, 6, 7],
                         is_active: true,
                         is_allowlisted: false,
-                        first_seen_ms: start_time_ms,
+                        first_seen_ms: display_first_seen,
                         last_seen_ms: now_ms,
                         command_line_redacted: None,
                         icon_data_url: None,
@@ -135,15 +138,12 @@ pub fn collect_snapshot(
     (processes, connections, modules)
 }
 
-unsafe fn inspect_process_details(
-    pid: u32,
-    fallback_ms: i64,
-) -> (Option<String>, i64, f32, SignatureStatus) {
+unsafe fn inspect_process_details(pid: u32) -> (Option<String>, i64, f32, SignatureStatus) {
     if pid == 0 || pid == 4 {
-        return (None, fallback_ms, 0.0, SignatureStatus::AccessDenied);
+        return (None, 0, 0.0, SignatureStatus::AccessDenied);
     }
     let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
-        return (None, fallback_ms, 0.0, SignatureStatus::AccessDenied);
+        return (None, 0, 0.0, SignatureStatus::AccessDenied);
     };
 
     let mut path_buf = vec![0u16; 1024];
@@ -156,7 +156,11 @@ unsafe fn inspect_process_details(
     )
     .is_ok()
     {
-        Some(OsString::from_wide(&path_buf[..size as usize]).to_string_lossy().into_owned())
+        Some(
+            OsString::from_wide(&path_buf[..size as usize])
+                .to_string_lossy()
+                .into_owned(),
+        )
     } else {
         None
     };
@@ -165,11 +169,12 @@ unsafe fn inspect_process_details(
     let mut exit = FILETIME::default();
     let mut kernel = FILETIME::default();
     let mut user = FILETIME::default();
-    let start_ms = if GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user).is_ok() {
-        filetime_to_unix_ms(creation).unwrap_or(fallback_ms)
-    } else {
-        fallback_ms
-    };
+    let start_ms =
+        if GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user).is_ok() {
+            filetime_to_unix_ms(creation).unwrap_or(0)
+        } else {
+            0
+        };
 
     let mut mem = PROCESS_MEMORY_COUNTERS::default();
     let memory_mb = if GetProcessMemoryInfo(
@@ -203,6 +208,7 @@ fn collect_network_tables(
 ) -> Vec<NetworkConnectionRecord> {
     let mut out = Vec::new();
     unsafe {
+        // TCP IPv4 owning PID table
         let mut size = 0u32;
         let _ = GetExtendedTcpTable(
             None,
@@ -274,7 +280,9 @@ fn collect_network_tables(
                         provenance: EvidenceProvenance {
                             source_api: "GetExtendedTcpTable(TCP_TABLE_OWNER_PID_ALL)".into(),
                             collection_method: "Windows IP Helper API snapshot".into(),
-                            confidence_note: "Confirmed owning PID; raw IP only (no fabricated domain names)".into(),
+                            confidence_note:
+                                "Confirmed owning PID; raw IP only (no fabricated domain names)"
+                                    .into(),
                             snapshot_only: true,
                         },
                     });
@@ -282,6 +290,7 @@ fn collect_network_tables(
             }
         }
 
+        // UDP IPv4 owning PID table
         let mut udp_size = 0u32;
         let _ = GetExtendedUdpTable(
             None,
@@ -371,7 +380,8 @@ fn collect_modules_bounded(processes: &[ProcessSummary], now_ms: i64) -> Vec<Mod
                 let mut count = 0usize;
                 loop {
                     let mod_name = utf16_z_to_string(&entry.szModule);
-                    let mod_path = RedactionEngine::sanitize_str(&utf16_z_to_string(&entry.szExePath));
+                    let mod_path =
+                        RedactionEngine::sanitize_str(&utf16_z_to_string(&entry.szExePath));
                     let sig = if mod_path.to_lowercase().starts_with(r"c:\windows\") {
                         SignatureStatus::SignedVerified
                     } else {
@@ -390,7 +400,9 @@ fn collect_modules_bounded(processes: &[ProcessSummary], now_ms: i64) -> Vec<Mod
                         provenance: EvidenceProvenance {
                             source_api: "CreateToolhelp32Snapshot(TH32CS_SNAPMODULE)".into(),
                             collection_method: "Per-user module snapshot".into(),
-                            confidence_note: "Observed in snapshot (exact load timestamp requires Kernel ETW)".into(),
+                            confidence_note:
+                                "Observed in snapshot (exact load timestamp requires Kernel ETW)"
+                                    .into(),
                             snapshot_only: true,
                         },
                     });
@@ -408,7 +420,9 @@ fn collect_modules_bounded(processes: &[ProcessSummary], now_ms: i64) -> Vec<Mod
 
 fn utf16_z_to_string(buf: &[u16]) -> String {
     let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
-    OsString::from_wide(&buf[..len]).to_string_lossy().into_owned()
+    OsString::from_wide(&buf[..len])
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn filetime_to_unix_ms(ft: FILETIME) -> Option<i64> {
