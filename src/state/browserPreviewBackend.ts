@@ -305,42 +305,36 @@ function makeModules(prefix: string): ModuleRecord[] {
 }
 
 function makeTimeline(range: string): TimelineBucket[] {
-  const specs: Record<string, Array<[string, number, number, number]>> = {
-    '15M': [
-      ['14:08', 8, 22, 64], ['14:10', 12, 34, 88], ['14:12', 6, 28, 72],
-      ['14:14', 15, 42, 110], ['14:16', 10, 38, 95], ['14:18', 18, 52, 140],
-      ['14:20', 14, 46, 128], ['14:22', 12, 48, 124], ['14:24', 9, 36, 98],
-    ],
-    '1H': [
-      ['13:25', 4, 18, 62], ['13:32', 6, 26, 84], ['13:39', 5, 22, 74],
-      ['13:46', 9, 36, 118], ['13:53', 7, 31, 96], ['14:00', 11, 44, 142],
-      ['14:07', 8, 35, 112], ['14:14', 14, 54, 168], ['14:22', 12, 48, 124],
-      ['14:28', 9, 39, 108], ['14:35', 13, 46, 134], ['14:42', 8, 32, 92],
-    ],
-    '6H': [
-      ['09:00', 24, 140, 420], ['10:00', 38, 210, 580], ['11:00', 31, 185, 510],
-      ['12:00', 46, 260, 720], ['13:00', 34, 195, 540], ['14:00', 42, 318, 890],
-    ],
-    '24H': [
-      ['18:00', 52, 320, 940], ['22:00', 18, 110, 310], ['02:00', 8, 42, 120],
-      ['06:00', 14, 88, 260], ['10:00', 64, 410, 1180], ['14:00', 48, 340, 980],
-    ],
-    '7D': [
-      ['Thu', 180, 1420, 4200], ['Fri', 210, 1680, 4850], ['Sat', 95, 780, 2100],
-      ['Sun', 110, 840, 2340], ['Mon', 245, 1920, 5600], ['Tue', 220, 1740, 5120],
-      ['Wed', 198, 1610, 4680],
-    ],
+  const now = Date.now();
+  const cfg: Record<string, { buckets: number; stepMs: number; isDays?: boolean }> = {
+    '15M': { buckets: 12, stepMs: 75_000 },
+    '1H': { buckets: 12, stepMs: 300_000 },
+    '6H': { buckets: 12, stepMs: 1_800_000 },
+    '24H': { buckets: 12, stepMs: 7_200_000 },
+    '7D': { buckets: 7, stepMs: 86_400_000, isDays: true },
   };
-  const rows = specs[range] ?? specs['1H'];
-  return rows.map(([label, p, n, m], idx) => ({
-    timestamp_ms: BASE_TS - (rows.length - idx) * 300000,
-    label,
-    total_events: p + n + m,
-    process_events: p,
-    network_events: n,
-    module_events: m,
-    rule_events: idx === Math.floor(rows.length * 0.7) ? 1 : 0,
-  }));
+  const { buckets, stepMs, isDays } = cfg[range] ?? cfg['1H'];
+  const curve = [0.55, 0.72, 0.64, 0.88, 0.76, 1.0, 0.84, 1.18, 0.96, 0.82, 1.08, 0.92];
+  return Array.from({ length: buckets }).map((_, idx) => {
+    const ts = now - (buckets - 1 - idx) * stepMs;
+    const d = new Date(ts);
+    const label = isDays
+      ? d.toLocaleDateString([], { weekday: 'short' })
+      : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    const k = curve[idx % curve.length];
+    const p = Math.max(2, Math.round(10 * k));
+    const n = Math.max(6, Math.round(34 * k));
+    const m = Math.max(12, Math.round(92 * k));
+    return {
+      timestamp_ms: ts,
+      label,
+      total_events: p + n + m,
+      process_events: p,
+      network_events: n,
+      module_events: m,
+      rule_events: idx === buckets - 2 ? 1 : 0,
+    };
+  });
 }
 
 export function createBrowserPreviewBackend() {
@@ -394,6 +388,7 @@ export function createBrowserPreviewBackend() {
       release_notes: 'SilentWatch v0.1.0 — Apple Liquid Glass workspace, live CPU/RAM telemetry, Behavior Explorer & System Tray service.',
       installer_url: null,
       whats_new_video_url: '/videos/whats-new.mp4',
+      startup_video_url: '/videos/startup.mp4',
       release_page_url: 'https://github.com/motionedits246-max/SilentWatch/releases',
       checked_ok: true,
     }),
