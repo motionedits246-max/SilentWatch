@@ -138,80 +138,77 @@ fn mark_release_video_seen(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 async fn check_for_updates() -> Result<UpdateCheckResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let current = env!("CARGO_PKG_VERSION").to_string();
-        let repo_releases =
-            "https://github.com/motionedits246-max/SilentWatch/releases".to_string();
+    let current = env!("CARGO_PKG_VERSION").to_string();
+    let repo_releases = "https://github.com/motionedits246-max/SilentWatch/releases".to_string();
 
-        let resp =
-            ureq::get("https://api.github.com/repos/motionedits246-max/SilentWatch/releases/latest")
-                .set("User-Agent", "SilentWatch-Desktop-Updater/0.1.0")
-                .set("Accept", "application/vnd.github+json")
-                .timeout(Duration::from_secs(4))
-                .call();
+    let resp =
+        ureq::get("https://api.github.com/repos/motionedits246-max/SilentWatch/releases/latest")
+            .set("User-Agent", "SilentWatch-Desktop-Updater/0.1.0")
+            .set("Accept", "application/vnd.github+json")
+            .timeout(Duration::from_secs(4))
+            .call();
 
-        match resp {
-            Ok(r) => {
-                let json: serde_json::Value = r.into_json().map_err(|e| e.to_string())?;
-                let tag = json["tag_name"]
-                    .as_str()
-                    .unwrap_or(&current)
-                    .trim_start_matches('v')
-                    .to_string();
-                let notes = json["body"]
-                    .as_str()
-                    .unwrap_or("Performance improvements and telemetry updates.")
-                    .to_string();
-                let html_url = json["html_url"]
-                    .as_str()
-                    .unwrap_or(&repo_releases)
-                    .to_string();
+    match resp {
+        Ok(r) => {
+            let json: serde_json::Value = r.into_json().map_err(|e| e.to_string())?;
+            let tag = json["tag_name"]
+                .as_str()
+                .unwrap_or(&current)
+                .trim_start_matches('v')
+                .to_string();
+            let notes = json["body"]
+                .as_str()
+                .unwrap_or("Performance improvements and telemetry updates.")
+                .to_string();
+            let html_url = json["html_url"]
+                .as_str()
+                .unwrap_or(&repo_releases)
+                .to_string();
 
-                let mut installer_url = None;
-                let mut video_url = None;
-                let mut startup_video_url = None;
-                if let Some(assets) = json["assets"].as_array() {
-                    for a in assets {
-                        let name = a["name"].as_str().unwrap_or("").to_lowercase();
-                        let dl = a["browser_download_url"].as_str().map(|s| s.to_string());
-                        if name.ends_with(".exe") && installer_url.is_none() {
-                            installer_url = dl;
-                        } else if name.ends_with(".mp4") {
-                            if (name.contains("startup") || name.contains("intro"))
-                                && startup_video_url.is_none()
-                            {
-                                startup_video_url = dl;
-                            } else if video_url.is_none() {
-                                video_url = dl;
-                            }
+            let mut installer_url = None;
+            let mut video_url = None;
+            let mut startup_video_url = None;
+            if let Some(assets) = json["assets"].as_array() {
+                for a in assets {
+                    let name = a["name"].as_str().unwrap_or("").to_lowercase();
+                    let dl = a["browser_download_url"].as_str().map(|s| s.to_string());
+                    if name.ends_with(".exe") && installer_url.is_none() {
+                        installer_url = dl;
+                    } else if name.ends_with(".mp4") {
+                        if (name.contains("startup") || name.contains("intro")) && startup_video_url.is_none() {
+                            startup_video_url = dl;
+                        } else if video_url.is_none() {
+                            video_url = dl;
                         }
                     }
                 }
-
-                let update_available = tag != current && !tag.is_empty();
-                Ok(UpdateCheckResult {
-                    current_version: current,
-                    latest_version: tag,
-                    update_available,
-                    release_notes: notes,
-                    installer_url,
-                    whats_new_video_url: video_url,
-                    startup_video_url,
-                    release_page_url: html_url,
-                    checked_ok: true,
-                })
             }
-            Err(_) => Ok(UpdateCheckResult {
-                current_version: current.clone(),
-                latest_version: current,
-                update_available: false,
-                release_notes: "You are running the latest installed version (offline or no published GitHub release yet).".into(),
-                installer_url: None,
-                whats_new_video_url: None,
-                startup_video_url: None,
-                release_page_url: repo_releases,
-                checked_ok: false,
-            }),
+
+            let update_available = tag != current && !tag.is_empty();
+            Ok(UpdateCheckResult {
+                current_version: current,
+                latest_version: tag,
+                update_available,
+                release_notes: notes,
+                installer_url,
+                whats_new_video_url: video_url,
+                startup_video_url,
+                release_page_url: html_url,
+                checked_ok: true,
+            })
         }
+        Err(_) => Ok(UpdateCheckResult {
+            current_version: current.clone(),
+            latest_version: current,
+            update_available: false,
+            release_notes: "You are running the latest installed version (offline or no published GitHub release yet).".into(),
+            installer_url: None,
+            whats_new_video_url: None,
+            startup_video_url: None,
+            release_page_url: repo_releases,
+            checked_ok: false,
+        }),
+    }
     })
     .await
     .map_err(|e| e.to_string())?
@@ -344,6 +341,7 @@ async fn get_overview(
                 EventCategory::System => proc_bins[idx] += 1,
             }
         }
+        // Always reflect current live cycle in the latest bucket so the live edge never reads 0 when active
         if let Some(last) = bucket_count.checked_sub(1) {
             if proc_bins[last] == 0 && !procs.is_empty() {
                 proc_bins[last] = (procs.len() as u64 / 8).max(1);
@@ -466,245 +464,245 @@ async fn get_modules(
 }
 
 #[tauri::command]
-fn get_behavior_graph(
+async fn get_behavior_graph(
     state: State<'_, AppState>,
-    mode: Option<DataSourceMode>,
+    _mode: Option<DataSourceMode>,
     process_key: Option<String>,
 ) -> Result<BehaviorGraph, String> {
-    if state.current_mode(mode) == DataSourceMode::Demo {
-        return Ok(DemoFixtureEngine::behavior_graph(process_key.as_deref()));
-    }
+    let storage = state.storage.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let procs = storage.query_processes(120, 0).map_err(|e| e.to_string())?;
+        let root = process_key
+            .as_deref()
+            .and_then(|k| procs.iter().find(|p| p.instance_id.stable_key() == k))
+            .or_else(|| procs.first())
+            .cloned()
+            .ok_or_else(|| "No observed processes in local database yet".to_string())?;
 
-    let procs = state
-        .storage
-        .query_processes(200, 0)
-        .map_err(|e| e.to_string())?;
-    let root = process_key
-        .as_deref()
-        .and_then(|k| procs.iter().find(|p| p.instance_id.stable_key() == k))
-        .or_else(|| procs.first())
-        .cloned()
-        .ok_or_else(|| "No observed processes in local database yet".to_string())?;
-
-    let root_key = root.instance_id.stable_key();
-    let mut nodes = vec![BehaviorNode {
-        id: "node-root".into(),
-        kind: GraphNodeKind::Process,
-        label: root.exe_name.clone(),
-        subtitle: format!(
-            "PID {} • {:.1}% CPU • {:.0} MB",
-            root.instance_id.pid, root.cpu_percent, root.memory_mb
-        ),
-        timestamp_ms: root.first_seen_ms,
-        signature_status: Some(root.signature_status),
-        classification: EpistemicClassification::Confirmed,
-        x: 80.0,
-        y: 205.0,
-        metadata: serde_json::json!({
-            "identity": root_key,
-            "path": root.exe_path,
-            "args": root.command_line_redacted,
-            "cpu_percent": root.cpu_percent,
-            "memory_mb": root.memory_mb,
-        }),
-        modules: vec![],
-    }];
-    let mut edges = Vec::new();
-
-    let children: Vec<&ProcessSummary> = procs
-        .iter()
-        .filter(|p| {
-            p.parent_instance_id
-                .as_ref()
-                .map(|pid| pid.stable_key() == root_key)
-                .unwrap_or(false)
-        })
-        .take(5)
-        .collect();
-
-    for (idx, child) in children.iter().enumerate() {
-        let cid = format!("node-child-{idx}");
-        nodes.push(BehaviorNode {
-            id: cid.clone(),
+        let root_key = root.instance_id.stable_key();
+        let mut nodes = vec![BehaviorNode {
+            id: "node-root".into(),
             kind: GraphNodeKind::Process,
-            label: child.exe_name.clone(),
-            subtitle: format!("PID {} • {:.0} MB", child.instance_id.pid, child.memory_mb),
-            timestamp_ms: child.first_seen_ms,
-            signature_status: Some(child.signature_status),
+            label: root.exe_name.clone(),
+            subtitle: format!(
+                "PID {} • {:.1}% CPU • {:.0} MB",
+                root.instance_id.pid, root.cpu_percent, root.memory_mb
+            ),
+            timestamp_ms: root.first_seen_ms,
+            signature_status: Some(root.signature_status),
             classification: EpistemicClassification::Confirmed,
-            x: 370.0,
-            y: 68.0 + (idx as f32 * 100.0),
+            x: 80.0,
+            y: 205.0,
             metadata: serde_json::json!({
-                "identity": child.instance_id.stable_key(),
-                "parent": root_key,
-                "path": child.exe_path,
-                "memory_mb": child.memory_mb,
+                "identity": root_key,
+                "path": root.exe_path,
+                "args": root.command_line_redacted,
+                "cpu_percent": root.cpu_percent,
+                "memory_mb": root.memory_mb,
             }),
             modules: vec![],
-        });
-        edges.push(BehaviorEdge {
-            id: format!("edge-child-{idx}"),
-            source: "node-root".into(),
-            target: cid,
-            label: "Spawned".into(),
-            timestamp_ms: child.first_seen_ms,
-            classification: EpistemicClassification::Confirmed,
-            category: EventCategory::Process,
-            evidence: "Confirmed OS Parent PID link".into(),
-        });
-    }
+        }];
+        let mut edges = Vec::new();
 
-    let conns = state
-        .storage
-        .query_network_connections(200)
-        .unwrap_or_default();
-    let proc_conns: Vec<NetworkConnectionRecord> = conns
-        .into_iter()
-        .filter(|c| c.process_instance_id.stable_key() == root_key)
-        .take(4)
-        .collect();
-    for (idx, c) in proc_conns.iter().enumerate() {
-        let nid = format!("node-net-{idx}");
-        let label = match c.remote_domain.as_deref() {
-            Some(d) => format!("{d}:{} ({})", c.remote_port, c.protocol),
-            None => format!("{}:{} ({})", c.remote_addr, c.remote_port, c.protocol),
-        };
-        nodes.push(BehaviorNode {
-            id: nid.clone(),
-            kind: GraphNodeKind::NetworkEndpoint,
-            label,
-            subtitle: format!("{} • {}", c.remote_addr, c.state),
-            timestamp_ms: c.first_seen_ms,
-            signature_status: None,
-            classification: c.classification,
-            x: 650.0,
-            y: 80.0 + (idx as f32 * 88.0),
-            metadata: serde_json::json!({
-                "ip": c.remote_addr,
-                "port": c.remote_port,
-                "protocol": c.protocol,
-            }),
-            modules: vec![],
-        });
-        edges.push(BehaviorEdge {
-            id: format!("edge-net-{idx}"),
-            source: "node-root".into(),
-            target: nid,
-            label: format!("{} :{}", c.protocol, c.remote_port),
-            timestamp_ms: c.first_seen_ms,
-            classification: c.classification,
-            category: EventCategory::Network,
-            evidence: c.provenance.confidence_note.clone(),
-        });
-    }
-
-    let mods = state
-        .storage
-        .query_modules(Some(&root_key), 120)
-        .unwrap_or_default();
-    if !mods.is_empty() {
-        let unsigned = mods
+        let children: Vec<&ProcessSummary> = procs
             .iter()
-            .filter(|m| m.signature_status == SignatureStatus::Unsigned)
-            .count();
-        nodes.push(BehaviorNode {
-            id: "node-dlls".into(),
-            kind: GraphNodeKind::DllCluster,
-            label: format!("DLL Cluster ({})", mods.len()),
-            subtitle: format!("{} Signed • {} Unsigned", mods.len() - unsigned, unsigned),
-            timestamp_ms: root.last_seen_ms,
-            signature_status: if unsigned > 0 {
-                Some(SignatureStatus::Unsigned)
-            } else {
-                Some(SignatureStatus::SignedVerified)
-            },
-            classification: EpistemicClassification::Confirmed,
-            x: 370.0,
-            y: 260.0,
-            metadata: serde_json::json!({
-                "total_modules": mods.len(),
-                "unsigned_modules": unsigned,
-            }),
-            modules: mods,
-        });
-        edges.push(BehaviorEdge {
-            id: "edge-dlls".into(),
-            source: "node-root".into(),
-            target: "node-dlls".into(),
-            label: "Loaded Modules".into(),
-            timestamp_ms: root.last_seen_ms,
-            classification: EpistemicClassification::Confirmed,
-            category: EventCategory::Module,
-            evidence: "Confirmed module snapshot".into(),
-        });
-    }
+            .filter(|p| {
+                p.parent_instance_id
+                    .as_ref()
+                    .map(|pid| pid.stable_key() == root_key)
+                    .unwrap_or(false)
+            })
+            .take(5)
+            .collect();
 
-    let min_ts = nodes
-        .iter()
-        .map(|n| n.timestamp_ms)
-        .min()
-        .unwrap_or(root.first_seen_ms);
-    let max_ts = nodes
-        .iter()
-        .map(|n| n.timestamp_ms)
-        .max()
-        .unwrap_or(root.last_seen_ms)
-        .max(min_ts + 1_000);
+        for (idx, child) in children.iter().enumerate() {
+            let cid = format!("node-child-{idx}");
+            nodes.push(BehaviorNode {
+                id: cid.clone(),
+                kind: GraphNodeKind::Process,
+                label: child.exe_name.clone(),
+                subtitle: format!("PID {} • {:.0} MB", child.instance_id.pid, child.memory_mb),
+                timestamp_ms: child.first_seen_ms,
+                signature_status: Some(child.signature_status),
+                classification: EpistemicClassification::Confirmed,
+                x: 370.0,
+                y: 68.0 + (idx as f32 * 100.0),
+                metadata: serde_json::json!({
+                    "identity": child.instance_id.stable_key(),
+                    "parent": root_key,
+                    "path": child.exe_path,
+                    "memory_mb": child.memory_mb,
+                }),
+                modules: vec![],
+            });
+            edges.push(BehaviorEdge {
+                id: format!("edge-child-{idx}"),
+                source: "node-root".into(),
+                target: cid,
+                label: "Spawned".into(),
+                timestamp_ms: child.first_seen_ms,
+                classification: EpistemicClassification::Confirmed,
+                category: EventCategory::Process,
+                evidence: "Confirmed OS Parent PID link".into(),
+            });
+        }
 
-    Ok(BehaviorGraph {
-        root_process: root,
-        nodes,
-        edges,
-        timeline_start_ms: min_ts,
-        timeline_end_ms: max_ts,
-        mode: DataSourceMode::Live,
+        let conns = storage.query_network_connections(200).unwrap_or_default();
+        let proc_conns: Vec<NetworkConnectionRecord> = conns
+            .into_iter()
+            .filter(|c| c.process_instance_id.stable_key() == root_key)
+            .take(4)
+            .collect();
+        for (idx, c) in proc_conns.iter().enumerate() {
+            let nid = format!("node-net-{idx}");
+            let label = match c.remote_domain.as_deref() {
+                Some(d) => format!("{d}:{} ({})", c.remote_port, c.protocol),
+                None => format!("{}:{} ({})", c.remote_addr, c.remote_port, c.protocol),
+            };
+            nodes.push(BehaviorNode {
+                id: nid.clone(),
+                kind: GraphNodeKind::NetworkEndpoint,
+                label,
+                subtitle: format!("{} • {}", c.remote_addr, c.state),
+                timestamp_ms: c.first_seen_ms,
+                signature_status: None,
+                classification: c.classification,
+                x: 650.0,
+                y: 80.0 + (idx as f32 * 88.0),
+                metadata: serde_json::json!({
+                    "ip": c.remote_addr,
+                    "port": c.remote_port,
+                    "protocol": c.protocol,
+                }),
+                modules: vec![],
+            });
+            edges.push(BehaviorEdge {
+                id: format!("edge-net-{idx}"),
+                source: "node-root".into(),
+                target: nid,
+                label: format!("{} :{}", c.protocol, c.remote_port),
+                timestamp_ms: c.first_seen_ms,
+                classification: c.classification,
+                category: EventCategory::Network,
+                evidence: c.provenance.confidence_note.clone(),
+            });
+        }
+
+        let mods = storage
+            .query_modules(Some(&root_key), 120)
+            .unwrap_or_default();
+        if !mods.is_empty() {
+            let unsigned = mods
+                .iter()
+                .filter(|m| m.signature_status == SignatureStatus::Unsigned)
+                .count();
+            nodes.push(BehaviorNode {
+                id: "node-dlls".into(),
+                kind: GraphNodeKind::DllCluster,
+                label: format!("DLL Cluster ({})", mods.len()),
+                subtitle: format!("{} Signed • {} Unsigned", mods.len() - unsigned, unsigned),
+                timestamp_ms: root.last_seen_ms,
+                signature_status: if unsigned > 0 {
+                    Some(SignatureStatus::Unsigned)
+                } else {
+                    Some(SignatureStatus::SignedVerified)
+                },
+                classification: EpistemicClassification::Confirmed,
+                x: 370.0,
+                y: 260.0,
+                metadata: serde_json::json!({
+                    "total_modules": mods.len(),
+                    "unsigned_modules": unsigned,
+                }),
+                modules: mods,
+            });
+            edges.push(BehaviorEdge {
+                id: "edge-dlls".into(),
+                source: "node-root".into(),
+                target: "node-dlls".into(),
+                label: "Loaded Modules".into(),
+                timestamp_ms: root.last_seen_ms,
+                classification: EpistemicClassification::Confirmed,
+                category: EventCategory::Module,
+                evidence: "Confirmed module snapshot".into(),
+            });
+        }
+
+        let min_ts = nodes
+            .iter()
+            .map(|n| n.timestamp_ms)
+            .min()
+            .unwrap_or(root.first_seen_ms);
+        let max_ts = nodes
+            .iter()
+            .map(|n| n.timestamp_ms)
+            .max()
+            .unwrap_or(root.last_seen_ms)
+            .max(min_ts + 1_000);
+
+        Ok(BehaviorGraph {
+            root_process: root,
+            nodes,
+            edges,
+            timeline_start_ms: min_ts,
+            timeline_end_ms: max_ts,
+            mode: DataSourceMode::Live,
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_rule_matches(
+async fn get_rule_matches(
     state: State<'_, AppState>,
-    mode: Option<DataSourceMode>,
+    _mode: Option<DataSourceMode>,
 ) -> Result<Vec<RuleMatchRecord>, String> {
-    if state.current_mode(mode) == DataSourceMode::Demo {
-        return Ok(DemoFixtureEngine::rule_matches());
-    }
-    let procs = state.storage.query_processes(200, 0).unwrap_or_default();
-    let conns = state
-        .storage
-        .query_network_connections(200)
-        .unwrap_or_default();
-    let mods = state.storage.query_modules(None, 250).unwrap_or_default();
-    let caps = state.collector.capabilities();
-    let allowlist = state.storage.list_allowlist().unwrap_or_default();
-    Ok(RuleEngine::evaluate(
-        &procs, &conns, &mods, &caps, &allowlist,
-    ))
+    let storage = state.storage.clone();
+    let collector = Arc::clone(&state.collector);
+    tauri::async_runtime::spawn_blocking(move || {
+        let procs = storage.query_processes(120, 0).unwrap_or_default();
+        let conns = storage.query_network_connections(200).unwrap_or_default();
+        let mods = storage.query_modules(None, 200).unwrap_or_default();
+        let caps = collector.capabilities();
+        let allowlist = storage.list_allowlist().unwrap_or_default();
+        Ok(RuleEngine::evaluate(
+            &procs, &conns, &mods, &caps, &allowlist,
+        ))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_events(
+async fn get_events(
     state: State<'_, AppState>,
-    mode: Option<DataSourceMode>,
+    _mode: Option<DataSourceMode>,
     search: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<TelemetryEvent>, String> {
-    if state.current_mode(mode) == DataSourceMode::Demo {
-        return Ok(DemoFixtureEngine::sample_events());
-    }
-    state
-        .storage
-        .query_events(&EventQuery {
-            search,
-            limit: limit.unwrap_or(100),
-            ..Default::default()
-        })
-        .map_err(|e| e.to_string())
+    let storage = state.storage.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        storage
+            .query_events(&EventQuery {
+                search,
+                limit: limit.unwrap_or(100),
+                ..Default::default()
+            })
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn list_allowlist(state: State<'_, AppState>) -> Result<Vec<AllowlistEntry>, String> {
-    state.storage.list_allowlist().map_err(|e| e.to_string())
+async fn list_allowlist(state: State<'_, AppState>) -> Result<Vec<AllowlistEntry>, String> {
+    let storage = state.storage.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        storage.list_allowlist().map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -774,31 +772,35 @@ fn clear_local_history(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn get_system_status(
+async fn get_system_status(
     state: State<'_, AppState>,
-    mode: Option<DataSourceMode>,
+    _mode: Option<DataSourceMode>,
 ) -> Result<SystemStatusSnapshot, String> {
-    let active_mode = state.current_mode(mode);
     let settings = state.settings.lock().map(|s| s.clone()).unwrap_or_default();
-    let storage = state
-        .storage
-        .diagnostics(settings.ring_buffer_cap_mb)
-        .map_err(|e| e.to_string())?;
-    let logs = state.storage.recent_diagnostic_logs(15).unwrap_or_default();
+    let storage_eng = state.storage.clone();
+    let collector = Arc::clone(&state.collector);
+    tauri::async_runtime::spawn_blocking(move || {
+        let storage = storage_eng
+            .diagnostics(settings.ring_buffer_cap_mb)
+            .map_err(|e| e.to_string())?;
+        let logs = storage_eng.recent_diagnostic_logs(15).unwrap_or_default();
 
-    Ok(SystemStatusSnapshot {
-        mode: active_mode,
-        privilege_mode: state.collector.privilege_mode(),
-        monitoring_active: state.collector.is_active(),
-        platform: std::env::consts::OS.to_string(),
-        ipc_protocol_version: IPC_PROTOCOL_VERSION,
-        ipc_healthy: true,
-        dropped_events: state.collector.dropped_events(),
-        collector_restarts: state.collector.restarts(),
-        capabilities: state.collector.capabilities(),
-        storage,
-        logs,
+        Ok(SystemStatusSnapshot {
+            mode: DataSourceMode::Live,
+            privilege_mode: collector.privilege_mode(),
+            monitoring_active: collector.is_active(),
+            platform: std::env::consts::OS.to_string(),
+            ipc_protocol_version: IPC_PROTOCOL_VERSION,
+            ipc_healthy: true,
+            dropped_events: collector.dropped_events(),
+            collector_restarts: collector.restarts(),
+            capabilities: collector.capabilities(),
+            storage,
+            logs,
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -821,6 +823,7 @@ pub fn run() {
     let mut settings = storage.load_settings().unwrap_or_default();
     let mut force_video = false;
 
+    // Apply preferences written by NSIS installer during installation
     let installer_prefs_path = data_dir.join("installer_prefs.json");
     if let Ok(raw) = std::fs::read_to_string(&installer_prefs_path) {
         if let Ok(prefs) = serde_json::from_str::<InstallerPrefs>(&raw) {
@@ -839,13 +842,20 @@ pub fn run() {
         let _ = std::fs::remove_file(&installer_prefs_path);
     }
 
+    // Always run in Live Local mode (demo mode removed)
+    settings.data_source_mode = DataSourceMode::Live;
+
     let collector = Arc::new(CollectorRuntime::new(settings.privilege_mode));
+    // Start real background monitoring immediately in background thread (never blocks window launch!)
     collector.start();
-    let _ = storage.append_diagnostic_log("INFO", "Engine started (async background collector).");
 
     let bg_collector = Arc::clone(&collector);
     let bg_storage = storage.clone();
+    let startup_cap_mb = settings.ring_buffer_cap_mb;
     std::thread::spawn(move || {
+        // Fast startup recovery if a previous database grew huge
+        let _ = bg_storage.fast_startup_maintenance(startup_cap_mb);
+
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_time()
             .build()
@@ -855,13 +865,21 @@ pub fn run() {
             loop {
                 if bg_collector.is_active() {
                     let cycle = bg_collector.collect_once();
+                    let proc_count = cycle.processes.len();
                     let _ = bg_storage.upsert_processes(&cycle.processes);
                     let _ = bg_storage.upsert_network_connections(&cycle.connections);
                     let _ = bg_storage.upsert_modules(&cycle.modules);
                     let _ = bg_storage.insert_events_batch(&cycle.events);
 
+                    if tick == 0 {
+                        let _ = bg_storage.append_diagnostic_log(
+                            "INFO",
+                            &format!("Engine started ({} active processes).", proc_count),
+                        );
+                    }
+
                     tick += 1;
-                    if tick % 30 == 0 {
+                    if tick % 12 == 0 {
                         if let Ok(cfg) = bg_storage.load_settings() {
                             let _ = bg_storage
                                 .enforce_retention(cfg.retention_hours, cfg.ring_buffer_cap_mb);

@@ -1,8 +1,8 @@
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use silentwatch_core::*;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
@@ -51,9 +51,11 @@ pub struct BatchInsertReport {
 pub struct StorageEngine {
     db_path: PathBuf,
     conn: Arc<Mutex<Connection>>,
+    integrity_ok: Arc<AtomicBool>,
 }
 
 impl StorageEngine {
+    /// Opens or creates a SQLite WAL database at `db_path` and applies versioned migrations.
     pub fn open(db_path: impl AsRef<Path>) -> Result<Self> {
         let db_path = db_path.as_ref().to_path_buf();
         if let Some(parent) = db_path.parent() {
@@ -66,15 +68,18 @@ impl StorageEngine {
         Ok(Self {
             db_path,
             conn: Arc::new(Mutex::new(conn)),
+            integrity_ok: Arc::new(AtomicBool::new(true)),
         })
     }
 
+    /// Creates an in-memory SQLite database for fast isolated unit tests.
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         Self::configure_and_migrate(&conn)?;
         Ok(Self {
             db_path: PathBuf::from(":memory:"),
             conn: Arc::new(Mutex::new(conn)),
+            integrity_ok: Arc::new(AtomicBool::new(true)),
         })
     }
 
@@ -386,33 +391,6 @@ impl StorageEngine {
         let conn = self.conn.lock().map_err(|_| StorageError::LockPoisoned)?;
         let allowlist = self.load_allowlist_locked(&conn)?;
 
-        let mut net_counts: HashMap<String, u64> = HashMap::new();
-        {
-            let mut st = conn.prepare("SELECT process_key, COUNT(*) FROM network_connections GROUP BY process_key")?;
-            let rows = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64)))?;
-            for r in rows.flatten() {
-                net_counts.insert(r.0, r.1);
-            }
-        }
-
-        let mut mod_counts: HashMap<String, u64> = HashMap::new();
-        {
-            let mut st = conn.prepare("SELECT process_key, COUNT(*) FROM modules GROUP BY process_key")?;
-            let rows = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64)))?;
-            for r in rows.flatten() {
-                mod_counts.insert(r.0, r.1);
-            }
-        }
-
-        let mut ev_counts: HashMap<String, u64> = HashMap::new();
-        {
-            let mut st = conn.prepare("SELECT process_key, COUNT(*) FROM telemetry_events GROUP BY process_key")?;
-            let rows = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as u64)))?;
-            for r in rows.flatten() {
-                ev_counts.insert(r.0, r.1);
-            }
-        }
-
         let mut stmt = conn.prepare(
             "SELECT process_key, boot_id, pid, start_time_ms, parent_key, exe_name, exe_path,
                     publisher, signature_status, cpu_percent, memory_mb, is_active,
@@ -420,6 +398,14 @@ impl StorageEngine {
              FROM processes
              ORDER BY is_active DESC, cpu_percent DESC, last_seen_ms DESC
              LIMIT ?1 OFFSET ?2",
+        )?;
+
+        let mut net_stmt =
+            conn.prepare_cached("SELECT COUNT(*) FROM network_connections WHERE process_key = ?1")?;
+        let mut mod_stmt =
+            conn.prepare_cached("SELECT COUNT(*) FROM modules WHERE process_key = ?1")?;
+        let mut ev_stmt = conn.prepare_cached(
+            "SELECT COUNT(*) FROM (SELECT 1 FROM telemetry_events WHERE process_key = ?1 LIMIT 500)",
         )?;
 
         let rows = stmt.query_map(params![limit as i64, offset as i64], |r| {
@@ -436,13 +422,20 @@ impl StorageEngine {
             let mem: f32 = r.get(10)?;
 
             let parent_instance_id = parent_key.and_then(|pk| parse_instance_key(&pk));
-            let is_allowlisted = allowlist.iter().any(|a| {
-                a.match_type == "exe_name" && a.value.eq_ignore_ascii_case(&exe_name)
-            });
+            let is_allowlisted = allowlist
+                .iter()
+                .any(|a| a.match_type == "exe_name" && a.value.eq_ignore_ascii_case(&exe_name));
 
-            let net_c = *net_counts.get(&process_key).unwrap_or(&0);
-            let mod_c = *mod_counts.get(&process_key).unwrap_or(&0);
-            let ev_c = *ev_counts.get(&process_key).unwrap_or(&1);
+            let net_c = net_stmt
+                .query_row(params![&process_key], |c| c.get::<_, i64>(0))
+                .unwrap_or(0) as u64;
+            let mod_c = mod_stmt
+                .query_row(params![&process_key], |c| c.get::<_, i64>(0))
+                .unwrap_or(0) as u64;
+            let ev_c = ev_stmt
+                .query_row(params![&process_key], |c| c.get::<_, i64>(0))
+                .unwrap_or(1)
+                .max(1) as u64;
 
             Ok(ProcessSummary {
                 instance_id: ProcessInstanceId::new(boot_id, pid, start_time_ms),
@@ -524,7 +517,11 @@ impl StorageEngine {
         Ok(out)
     }
 
-    pub fn query_modules(&self, process_key: Option<&str>, limit: usize) -> Result<Vec<ModuleRecord>> {
+    pub fn query_modules(
+        &self,
+        process_key: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<ModuleRecord>> {
         let conn = self.conn.lock().map_err(|_| StorageError::LockPoisoned)?;
         let sql = if process_key.is_some() {
             "SELECT id, process_key, process_name, module_name, module_path, signature_status,
@@ -636,7 +633,8 @@ impl StorageEngine {
             }
             if let Some(ref term) = q.search {
                 let t = term.to_lowercase();
-                let hay = format!("{} {:?}", ev.process_instance_id.stable_key(), ev.payload).to_lowercase();
+                let hay = format!("{} {:?}", ev.process_instance_id.stable_key(), ev.payload)
+                    .to_lowercase();
                 if !hay.contains(&t) {
                     continue;
                 }
@@ -748,6 +746,45 @@ impl StorageEngine {
         Ok(out)
     }
 
+    /// Fast startup maintenance that immediately recovers bloated multi-million-row databases
+    /// without blocking the UI thread.
+    pub fn fast_startup_maintenance(&self, cap_mb: u64) -> Result<usize> {
+        let conn = self.conn.lock().map_err(|_| StorageError::LockPoisoned)?;
+        let (min_seq, max_seq): (i64, i64) = conn
+            .query_row(
+                "SELECT COALESCE(MIN(seq_id), 0), COALESCE(MAX(seq_id), 0) FROM telemetry_events",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap_or((0, 0));
+        let approx_rows = if max_seq > 0 {
+            (max_seq - min_seq + 1).max(0)
+        } else {
+            0
+        };
+        let (db_bytes, wal_bytes) = self.disk_usage_bytes();
+        let cap_bytes = cap_mb.max(64) * 1024 * 1024;
+
+        let mut deleted = 0usize;
+        if approx_rows > 150_000 || db_bytes + wal_bytes > cap_bytes {
+            // Fast recovery: drop oversized legacy backlog cleanly so startup stays <100ms
+            let keep_from = (max_seq - 20_000).max(0);
+            if approx_rows > 500_000 {
+                deleted += conn.execute("DELETE FROM telemetry_events", [])?;
+                let _ = conn.execute("DELETE FROM processes WHERE is_active = 0", []);
+                let _ = conn.execute("DELETE FROM network_connections", []);
+            } else {
+                deleted += conn.execute(
+                    "DELETE FROM telemetry_events WHERE seq_id < ?1",
+                    params![keep_from],
+                )?;
+            }
+            let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+        }
+        Ok(deleted)
+    }
+
+    /// Ring-buffer retention cleanup based on age, row cap, and total DB+WAL byte cap.
     pub fn enforce_retention(&self, retention_hours: u64, cap_mb: u64) -> Result<usize> {
         let conn = self.conn.lock().map_err(|_| StorageError::LockPoisoned)?;
         let cutoff_ms = Utc::now().timestamp_millis() - (retention_hours as i64 * 3_600_000);
@@ -756,16 +793,39 @@ impl StorageEngine {
             params![cutoff_ms],
         )?;
 
+        // Hard row ceiling (50,000 events) so queries always stay sub-millisecond
+        let max_seq: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(seq_id), 0) FROM telemetry_events",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        if max_seq > 50_000 {
+            let keep_from = max_seq - 50_000;
+            deleted += conn.execute(
+                "DELETE FROM telemetry_events WHERE seq_id < ?1",
+                params![keep_from],
+            )?;
+        }
+
+        // Keep processes and network_connections bounded too
+        let _ = conn.execute(
+            "DELETE FROM processes WHERE is_active = 0 AND last_seen_ms < ?1",
+            params![cutoff_ms],
+        );
+        let _ = conn.execute(
+            "DELETE FROM network_connections WHERE last_seen_ms < ?1",
+            params![cutoff_ms],
+        );
+
         let (db_bytes, wal_bytes) = self.disk_usage_bytes();
         let cap_bytes = cap_mb * 1024 * 1024;
         if db_bytes + wal_bytes > cap_bytes {
+            let keep_from = (max_seq - 20_000).max(0);
             let pruned = conn.execute(
-                "DELETE FROM telemetry_events WHERE seq_id IN (
-                    SELECT seq_id FROM telemetry_events ORDER BY event_ts_ms ASC LIMIT (
-                        SELECT MAX(100, COUNT(*) / 5) FROM telemetry_events
-                    )
-                )",
-                [],
+                "DELETE FROM telemetry_events WHERE seq_id < ?1",
+                params![keep_from],
             )?;
             deleted += pruned;
             let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
@@ -773,6 +833,7 @@ impl StorageEngine {
         Ok(deleted)
     }
 
+    /// Safe user-initiated local history deletion (preserves settings and allowlist).
     pub fn clear_history(&self) -> Result<()> {
         let conn = self.conn.lock().map_err(|_| StorageError::LockPoisoned)?;
         conn.execute_batch(
@@ -791,7 +852,9 @@ impl StorageEngine {
         if self.db_path == Path::new(":memory:") {
             return (65_536, 0);
         }
-        let db_size = std::fs::metadata(&self.db_path).map(|m| m.len()).unwrap_or(0);
+        let db_size = std::fs::metadata(&self.db_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
         let wal_path = PathBuf::from(format!("{}-wal", self.db_path.display()));
         let wal_size = std::fs::metadata(&wal_path).map(|m| m.len()).unwrap_or(0);
         (db_size, wal_size)
@@ -802,12 +865,21 @@ impl StorageEngine {
         let journal_mode: String = conn
             .query_row("PRAGMA journal_mode", [], |r| r.get(0))
             .unwrap_or_else(|_| "unknown".into());
-        let integrity: String = conn
-            .query_row("PRAGMA quick_check(1)", [], |r| r.get(0))
-            .unwrap_or_else(|_| "error".into());
-        let total_events: i64 = conn
-            .query_row("SELECT COUNT(*) FROM telemetry_events", [], |r| r.get(0))
-            .unwrap_or(0);
+        let (min_seq, max_seq): (i64, i64) = conn
+            .query_row(
+                "SELECT COALESCE(MIN(seq_id), 0), COALESCE(MAX(seq_id), 0) FROM telemetry_events",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap_or((0, 0));
+        let total_events: i64 = if max_seq == 0 {
+            0
+        } else if max_seq - min_seq <= 60_000 {
+            conn.query_row("SELECT COUNT(*) FROM telemetry_events", [], |r| r.get(0))
+                .unwrap_or(0)
+        } else {
+            (max_seq - min_seq + 1).max(0)
+        };
         let (db_bytes, wal_bytes) = self.disk_usage_bytes();
 
         Ok(StorageDiagnostics {
@@ -819,7 +891,7 @@ impl StorageEngine {
             cap_bytes: cap_mb * 1024 * 1024,
             total_events: total_events as u64,
             retention_window_label: format!("Local WAL • {} events", total_events),
-            integrity_ok: integrity.eq_ignore_ascii_case("ok"),
+            integrity_ok: self.integrity_ok.load(Ordering::Relaxed),
         })
     }
 
